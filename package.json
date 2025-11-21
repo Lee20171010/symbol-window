@@ -1,0 +1,127 @@
+{
+  "name": "symbol-window",
+  "displayName": "Symbol Window",
+  "description": "A Source Insight-like symbol navigation side panel for VS Code. Features a native tree view for the current document and a powerful workspace-wide symbol search.",
+  "version": "0.0.1",
+  "publisher": "ytlee",
+  "license": "MIT",
+  "author": {
+    "name": "ytlee",
+    "url": "https://github.com/Lee20171010"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lee20171010/symbol-window"
+  },
+  "bugs": {
+    "url": "https://github.com/Lee20171010/symbol-window/issues"
+  },
+  "homepage": "https://github.com/Lee20171010/symbol-window#readme",
+  "engines": {
+    "vscode": "^1.106.1"
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization"
+  ],
+  "keywords": [
+    "symbol",
+    "outline",
+    "navigation",
+    "source insight",
+    "structure",
+    "workspace",
+    "search",
+    "tree",
+    "code map"
+  ],
+  "activationEvents": [
+    "onView:symbol-window-view"
+  ],
+  "main": "./dist/extension.js",
+  "icon": "media/icon.png",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "symbol-window-container",
+          "title": "Symbol Window",
+          "icon": "$(symbol-structure)"
+        }
+      ]
+    },
+    "views": {
+      "symbol-window-container": [
+        {
+          "type": "webview",
+          "id": "symbol-window-view",
+          "name": "Symbol Window"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "symbol-window.focus",
+        "title": "Focus Symbol Window"
+      },
+      {
+        "command": "symbol-window.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "symbol-window.toggleMode",
+        "title": "Toggle Mode (Current/Project)",
+        "icon": "$(arrow-swap)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "symbol-window.toggleMode",
+          "when": "view == symbol-window-view",
+          "group": "navigation"
+        },
+        {
+          "command": "symbol-window.refresh",
+          "when": "view == symbol-window-view",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@types/vscode": "^1.106.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.27.0",
+    "eslint": "^9.39.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.3"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.43",
+    "@vscode/webview-ui-toolkit": "^1.4.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}

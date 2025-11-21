@@ -1,0 +1,112 @@
+body {
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground);
+    background-color: var(--vscode-sideBar-background);
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.search-container {
+    padding: 5px;
+    background-color: var(--vscode-sideBarSectionHeader-background);
+    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+}
+
+.mode-indicator {
+    font-size: 0.8em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    opacity: 0.8;
+    font-weight: bold;
+    color: var(--vscode-sideBarTitle-foreground);
+}
+
+.container.mode-project .mode-indicator {
+    color: var(--vscode-textLink-foreground); /* Use a distinct color for Project Mode */
+}
+
+.loading-indicator {
+    padding: 10px;
+    text-align: center;
+    font-style: italic;
+    opacity: 0.7;
+}
+
+.tree-container {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.symbol-item {
+    display: flex;
+    align-items: center;
+    padding: 2px 5px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.symbol-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.symbol-item.selected {
+    background-color: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+.symbol-expand-icon {
+    width: 16px;
+    cursor: pointer;
+}
+
+.symbol-expand-icon.hidden {
+    visibility: hidden;
+}
+
+.symbol-icon {
+    margin-right: 6px;
+    width: 16px;
+    text-align: center;
+}
+
+.symbol-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.symbol-detail {
+    display: none; /* Hidden by default to reduce clutter */
+    opacity: 0.7;
+    font-size: 0.9em;
+    margin-left: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.no-results {
+    padding: 10px;
+    text-align: center;
+    font-style: italic;
+    opacity: 0.7;
+    color: var(--vscode-descriptionForeground);
+}
+
+.status-warning {
+    font-size: 0.85em;
+    color: var(--vscode-editorWarning-foreground);
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
