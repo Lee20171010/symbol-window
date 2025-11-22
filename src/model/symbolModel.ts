@@ -43,13 +43,21 @@ export class SymbolModel {
             let finalName = s.name;
             let finalDetail = s.detail;
 
+            // Order matters: We want Signature first, then Type info in detail.
+            // But we process them sequentially.
+            // If we process CStyle first, detail = "struct".
+            // Then Signature, detail = "struct (int a)". -> This is wrong order for display if we want Signature first.
+            // User wants: Name (Signature) Type
+            // So detail should be: "(int a)  struct"
+            
+            let typeSuffix = '';
+            let signatureSuffix = '';
+
             if (cleanCStyle) {
                 const { name, type } = parseCStyleType(finalName);
                 if (type) {
                     finalName = name;
-                    if (!finalDetail.toLowerCase().includes(type)) {
-                        finalDetail = finalDetail ? `${finalDetail}  ${type}` : type;
-                    }
+                    typeSuffix = type;
                 }
             }
 
@@ -57,8 +65,26 @@ export class SymbolModel {
                 const { name, signature } = parseSignature(finalName);
                 if (signature) {
                     finalName = name;
-                    finalDetail = finalDetail ? `${finalDetail} ${signature}` : signature;
+                    signatureSuffix = signature;
                 }
+            }
+
+            // Construct final detail: OriginalDetail + Signature + Type
+            // But we need to be careful about existing detail.
+            
+            let appendedDetail = '';
+            if (signatureSuffix) {
+                appendedDetail += ` ${signatureSuffix}`;
+            }
+            if (typeSuffix) {
+                // Avoid duplication if type is already in detail (rare but possible)
+                if (!finalDetail.toLowerCase().includes(typeSuffix)) {
+                     appendedDetail += `  ${typeSuffix}`;
+                }
+            }
+            
+            if (appendedDetail) {
+                finalDetail = finalDetail ? `${finalDetail}${appendedDetail}` : appendedDetail.trim();
             }
 
             return {
@@ -88,11 +114,14 @@ export class SymbolModel {
             let finalName = s.name;
             let finalDetail = s.containerName;
 
+            let typeSuffix = '';
+            let signatureSuffix = '';
+
             if (cleanCStyle) {
                 const { name, type } = parseCStyleType(finalName);
                 if (type) {
                     finalName = name;
-                    finalDetail = finalDetail ? `${finalDetail}  ${type}` : type;
+                    typeSuffix = type;
                 }
             }
 
@@ -100,8 +129,20 @@ export class SymbolModel {
                 const { name, signature } = parseSignature(finalName);
                 if (signature) {
                     finalName = name;
-                    finalDetail = finalDetail ? `${finalDetail} ${signature}` : signature;
+                    signatureSuffix = signature;
                 }
+            }
+
+            let appendedDetail = '';
+            if (signatureSuffix) {
+                appendedDetail += ` ${signatureSuffix}`;
+            }
+            if (typeSuffix) {
+                 appendedDetail += `  ${typeSuffix}`;
+            }
+            
+            if (appendedDetail) {
+                finalDetail = finalDetail ? `${finalDetail}${appendedDetail}` : appendedDetail.trim();
             }
 
             return {

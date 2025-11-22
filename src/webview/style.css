@@ -78,13 +78,15 @@ body {
 }
 
 .symbol-name {
-    flex: 1;
+    flex-shrink: 0; /* Prevent name from shrinking */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 70%; /* Ensure name doesn't take up entire space if detail is long */
 }
 
 .symbol-detail {
+    flex: 1; /* Allow detail to shrink */
     display: inline-block;
     opacity: 0.6;
     font-size: 0.85em;
@@ -93,6 +95,7 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--vscode-descriptionForeground);
+    min-width: 0; /* Allow flex item to shrink below content size */
 }
 
 .no-results {
