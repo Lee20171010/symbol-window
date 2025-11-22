@@ -101,3 +101,23 @@
 - [ ] **Extension Activation**
     - Reload the window (`Developer: Reload Window`) with the view open.
     - Verify the extension activates and restores the previous mode/state correctly.
+
+## 8. Configuration & Display
+- [ ] **Clean C-Style Types** (`symbolWindow.cleanCStyleTypes`)
+    - **Enabled (Default)**:
+        - Create/Open a C/C++ file with a struct typedef: `typedef struct MyStruct { ... } MyStruct;`
+        - Verify the symbol appears as `MyStruct` in the list.
+        - Verify `(struct)` or `(typedef)` appears in gray text next to the name (Detail).
+    - **Disabled**:
+        - Go to Settings -> Symbol Window -> Uncheck "Clean CStyle Types".
+        - Refresh the view.
+        - Verify the symbol appears as `MyStruct (struct)` (or similar) in the main name text.
+- [ ] **Move Function Signatures** (`symbolWindow.moveSignatureToDetail`)
+    - **Enabled (Default)**:
+        - Create/Open a file with a function: `void myFunction(int a, char b);`
+        - Verify the symbol appears as `myFunction` in the list.
+        - Verify `(int a, char b)` appears in gray text next to the name (Detail).
+    - **Disabled**:
+        - Go to Settings -> Symbol Window -> Uncheck "Move Signature To Detail".
+        - Refresh the view.
+        - Verify the symbol appears as `myFunction(int a, char b)` in the main name text.

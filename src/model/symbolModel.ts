@@ -35,57 +35,116 @@ export class SymbolModel {
         }
     }
 
-    private mapDocumentSymbols(symbols: vscode.DocumentSymbol[]): SymbolItem[] {
+
+    
+    // Fix recursion bug in previous block and apply same logic
+    private mapDocumentSymbolsRecursive(symbols: vscode.DocumentSymbol[], cleanCStyle: boolean, moveSignature: boolean): SymbolItem[] {
         return symbols.map(s => {
-            const { name, type } = this.parseName(s.name);
-            let detail = s.detail;
-            // Append type to detail if found and not already present
-            if (type && !detail.toLowerCase().includes(type)) {
-                detail = detail ? `${detail}  ${type}` : type;
+            let finalName = s.name;
+            let finalDetail = s.detail;
+
+            if (cleanCStyle) {
+                const { name, type } = parseCStyleType(finalName);
+                if (type) {
+                    finalName = name;
+                    if (!finalDetail.toLowerCase().includes(type)) {
+                        finalDetail = finalDetail ? `${finalDetail}  ${type}` : type;
+                    }
+                }
+            }
+
+            if (moveSignature) {
+                const { name, signature } = parseSignature(finalName);
+                if (signature) {
+                    finalName = name;
+                    finalDetail = finalDetail ? `${finalDetail} ${signature}` : signature;
+                }
             }
 
             return {
-                name: name,
-                detail: detail,
+                name: finalName,
+                detail: finalDetail,
                 kind: s.kind,
                 range: s.range,
                 selectionRange: s.selectionRange,
-                children: this.mapDocumentSymbols(s.children)
+                children: this.mapDocumentSymbolsRecursive(s.children, cleanCStyle, moveSignature)
             };
         });
     }
 
+    private mapDocumentSymbols(symbols: vscode.DocumentSymbol[]): SymbolItem[] {
+        const config = vscode.workspace.getConfiguration('symbolWindow');
+        const cleanCStyle = config.get<boolean>('cleanCStyleTypes', true);
+        const moveSignature = config.get<boolean>('moveSignatureToDetail', true);
+        return this.mapDocumentSymbolsRecursive(symbols, cleanCStyle, moveSignature);
+    }
+
     private mapWorkspaceSymbols(symbols: vscode.SymbolInformation[]): SymbolItem[] {
+        const config = vscode.workspace.getConfiguration('symbolWindow');
+        const cleanCStyle = config.get<boolean>('cleanCStyleTypes', true);
+        const moveSignature = config.get<boolean>('moveSignatureToDetail', true);
+
         return symbols.map(s => {
-            const { name, type } = this.parseName(s.name);
-            let detail = s.containerName;
-            // Append type to detail (containerName)
-            if (type) {
-                detail = detail ? `${detail}  ${type}` : type;
+            let finalName = s.name;
+            let finalDetail = s.containerName;
+
+            if (cleanCStyle) {
+                const { name, type } = parseCStyleType(finalName);
+                if (type) {
+                    finalName = name;
+                    finalDetail = finalDetail ? `${finalDetail}  ${type}` : type;
+                }
+            }
+
+            if (moveSignature) {
+                const { name, signature } = parseSignature(finalName);
+                if (signature) {
+                    finalName = name;
+                    finalDetail = finalDetail ? `${finalDetail} ${signature}` : signature;
+                }
             }
 
             return {
-                name: name,
-                detail: detail, // Use container name + type as detail
+                name: finalName,
+                detail: finalDetail,
                 kind: s.kind,
                 range: s.location.range,
-                selectionRange: s.location.range, // SymbolInformation doesn't have selectionRange
-                children: [], // Workspace symbols are flat
+                selectionRange: s.location.range,
+                children: [],
                 uri: s.location.uri.toString(),
                 containerName: s.containerName
             };
         });
     }
 
-    private parseName(name: string): { name: string, type: string } {
-        const regex = /\s*\((typedef|struct|enum|union|class|interface|macro|declaration)\)$/i;
-        const match = name.match(regex);
-        if (match) {
-            return { 
-                name: name.replace(regex, ''), 
-                type: match[1].toLowerCase() 
-            };
-        }
-        return { name, type: '' };
+}
+
+export function parseCStyleType(name: string): { name: string, type: string } {
+    const regex = /\s*\((typedef|struct|enum|union|class|interface|macro|declaration)\)$/i;
+    const match = name.match(regex);
+    if (match) {
+        return { 
+            name: name.replace(regex, ''), 
+            type: match[1].toLowerCase() 
+        };
     }
+    return { name, type: '' };
+}
+
+export function parseSignature(name: string): { name: string, signature: string } {
+    // Match anything starting with '(' at the end of the string, 
+    // but be careful not to match simple types if they were not caught by parseCStyleType.
+    // We assume a signature contains at least one comma or space inside parens, or is empty ().
+    // Regex: \s*(\(.*\))$
+    
+    const regex = /\s*(\(.*\))$/;
+    const match = name.match(regex);
+    
+    if (match) {
+        return {
+            name: name.replace(regex, ''),
+            signature: match[1]
+        };
+    }
+    return { name, signature: '' };
 }
