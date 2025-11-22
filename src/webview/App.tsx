@@ -165,13 +165,21 @@ const App: React.FC = () => {
             const result: SymbolItem[] = [];
             for (const item of items) {
                 const match = keywords.every((k: string) => item.name.toLowerCase().includes(k));
-                const filteredChildren = item.children ? filterTree(item.children) : [];
                 
-                if (match || filteredChildren.length > 0) {
-                    result.push({
-                        ...item,
-                        children: filteredChildren
-                    });
+                if (match) {
+                    // If parent matches, include it and ALL its original children (no filtering on children)
+                    // This allows users to expand the result and see members
+                    result.push(item);
+                } else {
+                    // If parent doesn't match, check children
+                    const filteredChildren = item.children ? filterTree(item.children) : [];
+                    
+                    if (filteredChildren.length > 0) {
+                        result.push({
+                            ...item,
+                            children: filteredChildren
+                        });
+                    }
                 }
             }
             return result;
@@ -234,6 +242,7 @@ const App: React.FC = () => {
                     onJump={handleJump}
                     onSelect={handleSelect}
                     selectedSymbol={selectedSymbol}
+                    defaultExpanded={!!query}
                 />
             </div>
         </div>

@@ -6,6 +6,7 @@ interface SymbolTreeProps {
     onJump: (symbol: SymbolItem) => void;
     onSelect: (symbol: SymbolItem) => void;
     selectedSymbol: SymbolItem | null;
+    defaultExpanded?: boolean;
 }
 
 const SymbolNode: React.FC<{ 
@@ -14,9 +15,15 @@ const SymbolNode: React.FC<{
     onJump: (s: SymbolItem) => void;
     onSelect: (s: SymbolItem) => void;
     selectedSymbol: SymbolItem | null;
-}> = ({ symbol, depth, onJump, onSelect, selectedSymbol }) => {
-    const [expanded, setExpanded] = useState(true);
+    defaultExpanded?: boolean;
+}> = ({ symbol, depth, onJump, onSelect, selectedSymbol, defaultExpanded }) => {
+    const [expanded, setExpanded] = useState(defaultExpanded || false);
     const hasChildren = symbol.children && symbol.children.length > 0;
+
+    // Update expanded state when defaultExpanded prop changes (e.g. when search starts/ends)
+    React.useEffect(() => {
+        setExpanded(defaultExpanded || false);
+    }, [defaultExpanded]);
 
     const handleClick = () => {
         onSelect(symbol);
@@ -96,6 +103,7 @@ const SymbolNode: React.FC<{
                             onJump={onJump}
                             onSelect={onSelect}
                             selectedSymbol={selectedSymbol}
+                            defaultExpanded={defaultExpanded}
                         />
                     ))}
                 </div>
@@ -104,7 +112,7 @@ const SymbolNode: React.FC<{
     );
 };
 
-const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, selectedSymbol }) => {
+const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, selectedSymbol, defaultExpanded }) => {
     return (
         <div className="tree-container">
             {symbols.map((symbol, index) => (
@@ -115,6 +123,7 @@ const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, sele
                     onJump={onJump}
                     onSelect={onSelect}
                     selectedSymbol={selectedSymbol}
+                    defaultExpanded={defaultExpanded}
                 />
             ))}
         </div>
