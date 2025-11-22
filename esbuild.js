@@ -1,4 +1,6 @@
 const esbuild = require("esbuild");
+const fs = require('fs');
+const path = require('path');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -22,6 +24,10 @@ const esbuildProblemMatcherPlugin = {
 		});
 	},
 };
+
+function copyFile(src, dest) {
+	fs.copyFileSync(src, dest);
+}
 
 async function main() {
 	const extensionCtx = await esbuild.context({
@@ -59,7 +65,17 @@ async function main() {
 		],
 	});
 
+	// Copy CSS and Fonts
+	if (!fs.existsSync('dist')) {
+		fs.mkdirSync('dist');
+	}
+	copyFile('src/webview/style.css', 'dist/style.css');
+	copyFile('node_modules/@vscode/codicons/dist/codicon.css', 'dist/codicon.css');
+	copyFile('node_modules/@vscode/codicons/dist/codicon.ttf', 'dist/codicon.ttf');
+
 	if (watch) {
+		// Watch for CSS changes manually if needed, or just copy once on start
+		// For simplicity, we just copy on start. In a real watch script we might want to watch these files too.
 		await Promise.all([
 			extensionCtx.watch(),
 			webviewCtx.watch()
@@ -80,3 +96,4 @@ main().catch(e => {
 	console.error(e);
 	process.exit(1);
 });
+

@@ -1,7 +1,7 @@
 {
   "name": "symbol-relation-window",
   "displayName": "Symbol Window",
-  "description": "A Source Insight-like symbol navigation side panel for VS Code. Features a native tree view for the current document and a powerful workspace-wide symbol search.",
+  "description": "Source Insight-like symbol navigation and workspace search.",
   "version": "0.0.1",
   "publisher": "ytlee",
   "license": "MIT",

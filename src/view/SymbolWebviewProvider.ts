@@ -59,8 +59,8 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
     private _getHtmlForWebview(webview: vscode.Webview) {
         // Get the local path to main script run in the webview, then convert it to a uri we can use in the webview.
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
-        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'style.css'));
-        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'style.css'));
+        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.css'));
 
         // Use a nonce to only allow a specific script to be run.
         const nonce = getNonce();
