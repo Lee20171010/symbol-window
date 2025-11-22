@@ -169,7 +169,11 @@ const App: React.FC = () => {
                 if (match) {
                     // If parent matches, include it and ALL its original children (no filtering on children)
                     // This allows users to expand the result and see members
-                    result.push(item);
+                    // We don't force expand here, so user sees the match but not necessarily all children immediately
+                    result.push({
+                        ...item,
+                        autoExpand: false
+                    });
                 } else {
                     // If parent doesn't match, check children
                     const filteredChildren = item.children ? filterTree(item.children) : [];
@@ -177,7 +181,8 @@ const App: React.FC = () => {
                     if (filteredChildren.length > 0) {
                         result.push({
                             ...item,
-                            children: filteredChildren
+                            children: filteredChildren,
+                            autoExpand: true // Force expand because a child matched
                         });
                     }
                 }
