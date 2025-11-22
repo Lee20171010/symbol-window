@@ -37,7 +37,7 @@ export class SymbolModel {
 
     private mapDocumentSymbols(symbols: vscode.DocumentSymbol[]): SymbolItem[] {
         return symbols.map(s => ({
-            name: s.name,
+            name: this.cleanName(s.name),
             detail: s.detail,
             kind: s.kind,
             range: s.range,
@@ -48,7 +48,7 @@ export class SymbolModel {
 
     private mapWorkspaceSymbols(symbols: vscode.SymbolInformation[]): SymbolItem[] {
         return symbols.map(s => ({
-            name: s.name,
+            name: this.cleanName(s.name),
             detail: s.containerName, // Use container name as detail for workspace symbols
             kind: s.kind,
             range: s.location.range,
@@ -57,5 +57,11 @@ export class SymbolModel {
             uri: s.location.uri.toString(),
             containerName: s.containerName
         }));
+    }
+
+    private cleanName(name: string): string {
+        // Remove common type suffixes like (typedef), (struct), (enum), etc.
+        // These are often added by C/C++ extensions but are redundant with icons.
+        return name.replace(/\s*\((typedef|struct|enum|union|class|interface|macro)\)$/i, '');
     }
 }
