@@ -22,6 +22,32 @@ const SymbolNode: React.FC<{
 
     // Update expanded state when defaultExpanded prop changes (e.g. when search starts/ends)
     React.useEffect(() => {
+        // Only auto-expand if it's a search result (defaultExpanded=true) AND it's a top-level match or parent
+        // But user wants struct content to be collapsed by default even in search results.
+        // So we should only expand the node itself to show it exists, but NOT force expand its children recursively unless necessary.
+        
+        // Actually, the issue is that we are passing 'defaultExpanded' recursively to all children.
+        // If defaultExpanded is true (because of search), ALL children get it and expand.
+        
+        // We need a way to distinguish "Expand this node because it matches" vs "Expand my children".
+        // For now, let's just respect the prop. If the user wants search results collapsed, we should set defaultExpanded=false in App.tsx?
+        // No, if we set false, then the user won't see the matching node if it's deep in the tree.
+        
+        // Wait, the requirement is: "Search results should show the matching node, but if that node has children (like a struct), those children should be collapsed".
+        
+        // Currently:
+        // App.tsx passes defaultExpanded={!!query} to SymbolTree.
+        // SymbolTree passes it to root SymbolNodes.
+        // SymbolNode passes it to its children.
+        
+        // Fix: Don't pass defaultExpanded to children recursively.
+        // Only the nodes that are explicitly part of the "path to match" need to be expanded.
+        // But our filtering logic in App.tsx returns a tree where "if parent matches, include ALL children".
+        
+        // If we stop passing defaultExpanded to children, then:
+        // 1. Root matches -> Root expands (good).
+        // 2. Root's children (struct members) -> They render, but with defaultExpanded=undefined (false). -> Collapsed. (This is what we want!)
+        
         setExpanded(defaultExpanded || false);
     }, [defaultExpanded]);
 
@@ -103,7 +129,10 @@ const SymbolNode: React.FC<{
                             onJump={onJump}
                             onSelect={onSelect}
                             selectedSymbol={selectedSymbol}
-                            defaultExpanded={defaultExpanded}
+                            // Fix: Do NOT pass defaultExpanded to children. 
+                            // This ensures that if a Struct matches, it expands to show itself, 
+                            // but its children (members) remain collapsed by default.
+                            defaultExpanded={false} 
                         />
                     ))}
                 </div>
