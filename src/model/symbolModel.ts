@@ -31,6 +31,9 @@ export class SymbolModel {
             return this.mapWorkspaceSymbols(symbols);
         } catch (e) {
             console.error(`[SymbolModel] Error fetching symbols:`, e);
+            // If we fail to map symbols, we should probably return the raw symbols or empty?
+            // If we return empty, checkReadiness loops forever.
+            // Let's try to return empty but log it.
             return [];
         }
     }
@@ -41,7 +44,7 @@ export class SymbolModel {
     private mapDocumentSymbolsRecursive(symbols: vscode.DocumentSymbol[], cleanCStyle: boolean, moveSignature: boolean): SymbolItem[] {
         return symbols.map(s => {
             let finalName = s.name;
-            let finalDetail = s.detail;
+            let finalDetail = s.detail || '';
 
             // Order matters: We want Signature first, then Type info in detail.
             // But we process them sequentially.
@@ -72,20 +75,20 @@ export class SymbolModel {
             // Construct final detail: OriginalDetail + Signature + Type
             // But we need to be careful about existing detail.
             
-            let appendedDetail = '';
+            const parts: string[] = [];
             if (signatureSuffix) {
-                appendedDetail += ` ${signatureSuffix}`;
+                parts.push(signatureSuffix);
             }
             if (typeSuffix) {
-                // Avoid duplication if type is already in detail (rare but possible)
                 if (!finalDetail.toLowerCase().includes(typeSuffix)) {
-                     appendedDetail += `  ${typeSuffix}`;
+                    parts.push(typeSuffix);
                 }
             }
-            
-            if (appendedDetail) {
-                finalDetail = finalDetail ? `${finalDetail}${appendedDetail}` : appendedDetail.trim();
+            if (finalDetail) {
+                parts.push(finalDetail);
             }
+            
+            finalDetail = parts.join('  ');
 
             return {
                 name: finalName,
@@ -112,7 +115,7 @@ export class SymbolModel {
 
         return symbols.map(s => {
             let finalName = s.name;
-            let finalDetail = s.containerName;
+            let finalDetail = s.containerName || '';
 
             let typeSuffix = '';
             let signatureSuffix = '';
@@ -133,17 +136,20 @@ export class SymbolModel {
                 }
             }
 
-            let appendedDetail = '';
+            const parts: string[] = [];
             if (signatureSuffix) {
-                appendedDetail += ` ${signatureSuffix}`;
+                parts.push(signatureSuffix);
             }
             if (typeSuffix) {
-                 appendedDetail += `  ${typeSuffix}`;
+                if (!finalDetail.toLowerCase().includes(typeSuffix)) {
+                    parts.push(typeSuffix);
+                }
+            }
+            if (finalDetail) {
+                parts.push(finalDetail);
             }
             
-            if (appendedDetail) {
-                finalDetail = finalDetail ? `${finalDetail}${appendedDetail}` : appendedDetail.trim();
-            }
+            finalDetail = parts.join('  ');
 
             return {
                 name: finalName,
