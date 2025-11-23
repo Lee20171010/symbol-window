@@ -46,6 +46,12 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
                 case 'loadMore':
                     this.controller.loadMore();
                     break;
+                case 'deepSearch':
+                    this.controller.deepSearch();
+                    break;
+                case 'cancel':
+                    this.controller.cancelSearch();
+                    break;
             }
         });
     }

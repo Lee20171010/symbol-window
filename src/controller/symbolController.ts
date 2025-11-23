@@ -11,9 +11,9 @@ export class SymbolController {
     private debounceTimer: NodeJS.Timeout | undefined;
     private currentSearchId: number = 0;
     private searchCts: vscode.CancellationTokenSource | undefined;
-    private lastSearchKeyword: string = '';
-    private lastSearchResults: SymbolItem[] = [];
     
+    private currentQuery: string = '';
+
     // Caching
     private searchCache: Map<string, SymbolItem[]> = new Map();
     private cacheTimeout: NodeJS.Timeout | undefined;
@@ -96,6 +96,16 @@ export class SymbolController {
 
         // Sync mode to webview to ensure consistency
         this.provider?.postMessage({ command: 'setMode', mode: this.currentMode });
+        
+        // Sync settings
+        const config = vscode.workspace.getConfiguration('symbolWindow');
+        this.provider?.postMessage({ 
+            command: 'setSettings', 
+            settings: {
+                forceDeepSearch: config.get<boolean>('forceDeepSearch', false),
+                enableDeepSearch: config.get<boolean>('enableDeepSearch', false)
+            }
+        });
 
         // If standby, try polling again (Manual Retry)
         if (this.readiness === 'standby') {
@@ -130,6 +140,16 @@ export class SymbolController {
         this.context.workspaceState.update('symbolWindow.mode', this.currentMode);
         if (this.provider) {
             this.provider.postMessage({ command: 'setMode', mode: this.currentMode });
+            
+            // Sync settings on mode toggle too
+            const config = vscode.workspace.getConfiguration('symbolWindow');
+            this.provider.postMessage({ 
+                command: 'setSettings', 
+                settings: {
+                    forceDeepSearch: config.get<boolean>('forceDeepSearch', false),
+                    enableDeepSearch: config.get<boolean>('enableDeepSearch', false)
+                }
+            });
         }
         
         // If ready, refresh. If standby, maybe poll?
@@ -214,6 +234,15 @@ export class SymbolController {
         }
     }
 
+    public cancelSearch() {
+        if (this.searchCts) {
+            this.searchCts.cancel();
+            this.searchCts.dispose();
+            this.searchCts = undefined;
+        }
+        this.provider?.postMessage({ command: 'status', status: 'ready' });
+    }
+
     // Removed checkReadiness method as it is replaced by startPolling/poll
     public async handleSearch(query: string) {
         if (this.currentMode === 'project') {
@@ -234,15 +263,21 @@ export class SymbolController {
             if (this.debounceTimer) { clearTimeout(this.debounceTimer); }
             
             const searchId = ++this.currentSearchId;
+            const config = vscode.workspace.getConfiguration('symbolWindow');
+            const enableDeepSearch = config.get<boolean>('enableDeepSearch', false);
+            const forceDeepSearch = enableDeepSearch && config.get<boolean>('forceDeepSearch', false);
+            const debounceTime = forceDeepSearch ? 800 : 300;
 
             this.debounceTimer = setTimeout(async () => {
                 if (searchId !== this.currentSearchId) { return; }
 
                 if (!query) {
+                    this.currentQuery = '';
                     this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
                     return;
                 }
                 
+                this.currentQuery = query;
                 const keywords = query.trim().split(/\s+/).filter(k => k.length > 0);
                 
                 this.provider?.postMessage({ command: 'searchStart' });
@@ -278,6 +313,19 @@ export class SymbolController {
                 let allSymbols: SymbolItem[] = [];
 
                 try {
+                    // If Force Deep Search is enabled, skip standard LSP search to avoid redundancy
+                    // UNLESS we want to use LSP for libraries/dependencies that Ripgrep can't see (e.g. node_modules)
+                    // But typically users want to search their source code.
+                    // Let's stick to the plan: If Force Deep Search, ONLY do Deep Search.
+                    
+                    if (forceDeepSearch) {
+                        if (!token.isCancellationRequested) {
+                            await this.deepSearch(true);
+                        }
+                        return;
+                    }
+
+                    // Standard Search Logic (LSP)
                     // Fetch missing keywords
                     if (missingKeywords.length > 0) {
                         const searchPromises = missingKeywords.slice(0, 3).map(async (keyword) => {
@@ -349,7 +397,7 @@ export class SymbolController {
                     }
                     return;
                 }
-            }, 300);
+            }, debounceTime);
         }
     }
 
@@ -387,6 +435,74 @@ export class SymbolController {
                 symbols: nextBatch,
                 totalCount: this.allSearchResults.length
             });
+        }
+    }
+
+    public async deepSearch(isAuto: boolean = false) {
+        const config = vscode.workspace.getConfiguration('symbolWindow');
+        const enableDeepSearch = config.get<boolean>('enableDeepSearch', false);
+        
+        if (!enableDeepSearch || this.currentMode !== 'project' || !this.currentQuery) {
+            return;
+        }
+
+        const keywords = this.currentQuery.trim().split(/\s+/).filter(k => k.length > 0);
+        if (keywords.length === 0) {
+            return;
+        }
+
+        // If auto-triggered, we don't want to set status to loading if it's already loading?
+        // Actually, handleSearch sets 'searchStart' which might set loading.
+        // But deepSearch is async.
+        if (!isAuto) {
+            this.provider?.postMessage({ command: 'status', status: 'loading' });
+        }
+
+        try {
+            const textSearchResults = await this.model.findSymbolsByTextSearch(this.currentQuery, keywords, this.searchCts?.token);
+            
+            // Check cancellation
+            if (this.searchCts?.token.isCancellationRequested) {
+                return;
+            }
+
+            // Deduplicate against existing results
+            const existingKeys = new Set<string>();
+            this.allSearchResults.forEach(s => {
+                // Use selectionRange for better matching between DocumentSymbol and WorkspaceSymbol
+                // WorkspaceSymbol range usually points to the name, which matches DocumentSymbol.selectionRange
+                const key = `${s.uri}|${s.selectionRange.start.line}:${s.selectionRange.start.character}`;
+                existingKeys.add(key);
+            });
+
+            const newItems: SymbolItem[] = [];
+            textSearchResults.forEach(s => {
+                const key = `${s.uri}|${s.selectionRange.start.line}:${s.selectionRange.start.character}`;
+                if (!existingKeys.has(key)) {
+                    s.isDeepSearch = true;
+                    newItems.push(s);
+                    existingKeys.add(key); // Avoid duplicates within new items too
+                }
+            });
+
+            if (newItems.length > 0) {
+                // Prepend new items
+                this.allSearchResults = [...newItems, ...this.allSearchResults];
+                
+                // Refresh UI
+                this.loadedCount = Math.max(this.loadedCount + newItems.length, this.BATCH_SIZE);
+                const batch = this.allSearchResults.slice(0, this.loadedCount);
+                
+                this.provider?.postMessage({ 
+                    command: 'updateSymbols', 
+                    symbols: batch,
+                    totalCount: this.allSearchResults.length 
+                });
+            }
+        } catch (e) {
+            console.error('[SymbolWindow] Deep search failed', e);
+        } finally {
+            this.provider?.postMessage({ command: 'status', status: 'ready' });
         }
     }
 }

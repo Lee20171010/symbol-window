@@ -89,6 +89,21 @@
         - Step 4: Cache the results for each keyword.
         - Step 5: Collect all cached results for the current keywords.
         - Step 6: Filter the collected results in memory to ensure each symbol matches **ALL** keywords.
+    - **Deep Search (Text Scan Fallback) [Experimental]:**
+        - **Configuration:**
+            - `symbolWindow.enableDeepSearch`: Master switch (Default: `false`).
+            - `symbolWindow.forceDeepSearch`: Auto-trigger switch (Default: `false`).
+        - **Trigger:**
+            - Manual button click in Project Mode (if `enableDeepSearch` is true).
+            - Automatic if `forceDeepSearch` is true.
+        - **Purpose:** Overcome LSP result truncation (e.g., searching "User" returns only first 100 results).
+        - **Strategy:**
+            1.  Identify the longest keyword (Primary Keyword).
+            2.  Use **Ripgrep (`rg`)** to scan the entire workspace for files containing the Primary Keyword.
+            3.  For each matching file, invoke `vscode.executeDocumentSymbolProvider` to parse symbols.
+            4.  Filter symbols in memory to ensure they match **ALL** keywords.
+            5.  **If Forced:** Return these results directly.
+            6.  **If Manual:** Deduplicate against existing results (using `SelectionRange`) and prepend to the list.
 
 ### 4.4 Visuals
 - **Icons:** Use VS Code native `ThemeIcon` mapped to `vscode.SymbolKind` (e.g., `SymbolKind.Method` -> `$(symbol-method)`). This ensures it looks exactly like the native outline/search.

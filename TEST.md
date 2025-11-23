@@ -65,7 +65,42 @@
     - Perform the same search multiple times.
     - Verify the results are identical each time.
 
-## 5. Search Bar Robustness
+## 5. Deep Search (Experimental)
+- [ ] **Enable Deep Search**
+    - Set `symbolWindow.enableDeepSearch` to `true`.
+    - Switch to Project Mode.
+    - Verify the "Deep Search" button appears below the search bar (after a search).
+- [ ] **Disable Deep Search**
+    - Set `symbolWindow.enableDeepSearch` to `false`.
+    - Switch to Project Mode.
+    - Verify the "Deep Search" button is **hidden**.
+- [ ] **Force Deep Search**
+    - Set `symbolWindow.enableDeepSearch` to `true`.
+    - Set `symbolWindow.forceDeepSearch` to `true`.
+    - Type a query in Project Mode.
+    - Verify that "Deep Search" is triggered automatically (no button click needed).
+    - Verify the "Deep Search" button is hidden (since it's automatic).
+    - Verify results are returned.
+    - Verify results do NOT have a special background highlight (since all results are from Deep Search).
+- [ ] **Cancel Deep Search**
+    - Trigger a long-running Deep Search (e.g., common keyword in large repo).
+    - Click the "Cancel" button.
+    - Verify the search stops and the loading indicator disappears.
+- [ ] **Triggering (Manual Mode)**
+    - Set `symbolWindow.forceDeepSearch` to `false`.
+    - Enter a common keyword (e.g., "User") that likely exceeds the LSP limit (100 results).
+    - Verify the "Deep Search" button is visible.
+    - Click "Deep Search".
+- [ ] **Results (Manual Mode)**
+    - Verify the UI shows a "Searching..." state.
+    - Verify new results appear at the top of the list.
+    - Verify Deep Search results have a distinct background highlight (to distinguish from standard results).
+    - Verify hovering over a Deep Search result shows a tooltip "Result from Deep Search".
+    - Verify results are relevant (contain the keyword).
+- [ ] **Deduplication**
+    - Ensure symbols already found by the standard search are not duplicated in the Deep Search results.
+
+## 6. Search Bar Robustness
 - [ ] **Special Characters**
     - Search for symbols with characters like `::`, `->`, `.`, `_`, `~`.
     - Verify the application does not crash.
@@ -75,7 +110,7 @@
     - Verify the result list ends up empty (not showing results for the intermediate query).
     - Type "abc", wait slightly, then type "d". Verify results are for "abcd".
 
-## 6. State Management & Synchronization
+## 7. State Management & Synchronization
 - [ ] **File Updates (Data Freshness)**
     - **Current Mode**:
         - Modify a symbol in the active file (e.g., rename a function) and **Save**.
@@ -111,7 +146,7 @@
     - Switch to **Current Document Mode**.
     - Verify the list **immediately** populates with symbols for the active file, ignoring the Project Mode error/loading state.
 
-## 7. Performance & User Experience
+## 8. Performance & User Experience
 - [ ] **Instant Search (Cache Verification)**
     - Type a query (e.g., "Controller") in Project Mode. Note the time it takes to appear (e.g., ~1 second).
     - Clear the search bar.
@@ -122,7 +157,7 @@
     - Click the **Refresh Button**.
     - Verify the view briefly flashes or shows a loading state, indicating that a fresh search is being performed against the workspace.
 
-## 8. Additional Considerations (Edge Cases)
+## 9. Additional Considerations (Edge Cases)
 - [ ] **Pagination / Infinite Scroll** (Project Mode)
     - Search for a common term (e.g., `e`) that returns > 100 results.
     - Scroll to the bottom of the list.
@@ -134,7 +169,7 @@
     - Reload the window (`Developer: Reload Window`) with the view open.
     - Verify the extension activates and restores the previous mode/state correctly.
 
-## 8. Configuration & Display
+## 10. Configuration & Display
 - [ ] **Clean C-Style Types** (`symbolWindow.cleanCStyleTypes`)
     - **Enabled (Default)**:
         - Create/Open a C/C++ file with a struct typedef: `typedef struct MyStruct { ... } MyStruct;`

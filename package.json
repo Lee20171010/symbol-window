@@ -73,6 +73,11 @@
         "command": "symbol-window.toggleMode",
         "title": "Toggle Mode (Current/Project)",
         "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "symbol-window.deepSearch",
+        "title": "Deep Search",
+        "icon": "$(search-fuzzy)"
       }
     ],
     "menus": {
@@ -84,6 +89,11 @@
         },
         {
           "command": "symbol-window.refresh",
+          "when": "view == symbol-window-view",
+          "group": "navigation"
+        },
+        {
+          "command": "symbol-window.deepSearch",
           "when": "view == symbol-window-view",
           "group": "navigation"
         }
@@ -101,6 +111,16 @@
           "type": "boolean",
           "default": true,
           "description": "Move function signatures/parameters (e.g., (int a, char b)) from the symbol name to the detail view for a cleaner list."
+        },
+        "symbolWindow.enableDeepSearch": {
+          "type": "boolean",
+          "default": false,
+          "description": "(Experimental) Enable the Deep Search feature, which uses text scanning (Ripgrep) to find symbols when LSP results are truncated."
+        },
+        "symbolWindow.forceDeepSearch": {
+          "type": "boolean",
+          "default": false,
+          "description": "(Experimental) Always perform a Deep Search when searching in Project Mode. Requires 'symbolWindow.enableDeepSearch' to be true."
         }
       }
     }
@@ -135,6 +155,7 @@
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.43",
+    "@vscode/ripgrep": "^1.17.0",
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

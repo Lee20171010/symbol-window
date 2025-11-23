@@ -13,6 +13,7 @@ A Visual Studio Code extension that provides a "Source Insight"-like symbol navi
 ### 2. Project Workspace Mode
 - **Global Search**: Search for symbols across the entire workspace.
 - **Multi-keyword Support**: Supports space-separated keywords (e.g., `user controller` matches `UserController`).
+- **Deep Search (Experimental)**: A powerful hybrid search mode that combines text scanning (Ripgrep) with symbol parsing (LSP) to find results in large projects where standard LSP searches might be truncated.
 - **Performance**: Optimized with debouncing and caching for large projects.
 - **Infinite Scroll**: Automatically loads more results as you scroll.
 
@@ -31,20 +32,34 @@ You can customize the appearance of the symbol list via VS Code settings:
 - **`symbolWindow.moveSignatureToDetail`** (Default: `true`):  
   Moves function signatures/parameters (e.g., `(int a, char b)`) from the symbol name to the detail view.
 
+- **`symbolWindow.enableDeepSearch`** (Default: `false`):  
+  **[Experimental]** Enables the "Deep Search" feature in Project Mode. This feature uses `ripgrep` to scan files when standard symbol search is insufficient.
+
+- **`symbolWindow.forceDeepSearch`** (Default: `false`):  
+  **[Experimental]** If enabled (and `enableDeepSearch` is true), the extension will *always* use Deep Search for every query in Project Mode, skipping the standard LSP search. This is useful for very large codebases where LSP search is consistently incomplete.
+
 ## Usage
 
 ![alt text](media/SymbolWindow.png)
-1.  **Open the View**: Click the "Symbol Window" icon in the Activity Bar (usually on the left).<br>
-![alt text](media/ActivityBar.png)
-2.  **Switch Modes**: Click the "Toggle Mode" icon in the view title area (top right of the panel) to switch between "Current Document" and "Project Workspace".<br>
-![alt text](media/ToggleMode.png)
-3.  **Refresh**: Click the "Refresh" icon to reload symbols or clear the search cache.<br>
-![alt text](media/Refresh.png)
+1.  **Open the View**: ![alt text](media/ActivityBar.png)<br>
+Click the "Symbol Window" icon in the Activity Bar (usually on the left).
+
+2.  **Switch Modes**: ![alt text](media/ToggleMode.png)<br>
+Click the "Toggle Mode" icon in the view title area (top right of the panel) to switch between "Current Document" and "Project Workspace".
+
+3.  **Refresh**: ![alt text](media/Refresh.png)<br>
+Click the "Refresh" icon to reload symbols or clear the search cache.
 4.  **Navigate**:
     - **Click**: Select a symbol.
     - **Double-Click**: Jump to the symbol in the editor.
     - **Arrow Keys**: Navigate the list.
     - **Enter**: Jump to the selected symbol.
+5.  **Deep Search (Experimental)**: ![alt text](media/DeepSearch.png)
+    - *Note: This feature must be enabled via `symbolWindow.enableDeepSearch` in settings.*
+    - In **Project Mode**, if you cannot find a symbol due to too many results (LSP truncation), click the **"Deep Search"** button below the search bar.
+    - This triggers a full-text scan of the workspace to find files containing your keywords, then parses them for precise symbols.
+    - Deep Search results appear at the top of the list.
+
 
 ## Requirements
 

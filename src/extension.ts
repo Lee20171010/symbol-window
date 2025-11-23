@@ -32,6 +32,12 @@ export function activate(context: vscode.ExtensionContext) {
 			controller.toggleMode();
 		})
 	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('symbol-window.deepSearch', () => {
+			controller.deepSearch();
+		})
+	);
 }
 
 export function deactivate() {}

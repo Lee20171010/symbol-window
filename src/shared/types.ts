@@ -8,6 +8,7 @@ export interface SymbolItem {
     uri?: string; // For workspace symbols
     containerName?: string;
     autoExpand?: boolean;
+    isDeepSearch?: boolean;
 }
 
 export type SymbolMode = 'current' | 'project';
@@ -24,10 +25,13 @@ export type Message =
     | { command: 'status'; status: 'ready' | 'loading' }
     | { command: 'setQuery'; query: string }
     | { command: 'refresh' }
-    | { command: 'searchStart' };
+    | { command: 'searchStart' }
+    | { command: 'setSettings'; settings: { forceDeepSearch?: boolean; enableDeepSearch?: boolean } };
 
 export type WebviewMessage =
     | { command: 'search'; query: string }
     | { command: 'jump'; uri?: string; range: any }
     | { command: 'ready' }
-    | { command: 'loadMore' };
+    | { command: 'loadMore' }
+    | { command: 'deepSearch' }
+    | { command: 'cancel' };

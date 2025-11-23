@@ -18,6 +18,8 @@ const App: React.FC = () => {
     const [backendStatus, setBackendStatus] = useState<'ready' | 'loading' | 'timeout'>(
         (savedState.mode || 'current') === 'project' ? 'loading' : 'ready'
     );
+    const [forceDeepSearch, setForceDeepSearch] = useState(false);
+    const [enableDeepSearch, setEnableDeepSearch] = useState(false);
 
     // Refs for accessing state in event listener
     const modeRef = useRef(mode);
@@ -59,6 +61,14 @@ const App: React.FC = () => {
                     break;
                 case 'setQuery':
                     setQuery(message.query);
+                    break;
+                case 'setSettings':
+                    if (message.settings?.forceDeepSearch !== undefined) {
+                        setForceDeepSearch(message.settings.forceDeepSearch);
+                    }
+                    if (message.settings?.enableDeepSearch !== undefined) {
+                        setEnableDeepSearch(message.settings.enableDeepSearch);
+                    }
                     break;
                 case 'refresh':
                     if (modeRef.current === 'project') {
@@ -198,7 +208,6 @@ const App: React.FC = () => {
         if (mode === 'project' && symbols.length > 0 && symbols.length < totalCount) {
             const container = document.querySelector('.tree-container');
             if (container && container.scrollHeight <= container.clientHeight) {
-                console.log('Content smaller than container, loading more...');
                 vscode.postMessage({ command: 'loadMore' });
             }
         }
@@ -224,7 +233,14 @@ const App: React.FC = () => {
                 {backendStatus === 'loading' && (
                     <div className="status-warning">
                         <span className="codicon codicon-loading codicon-modifier-spin"></span>
-                        Waiting for symbol provider...
+                        {mode === 'project' && query ? 'Searching...' : 'Waiting for symbol provider...'}
+                        {mode === 'project' && query && (
+                            <span 
+                                className="codicon codicon-close cancel-button" 
+                                title="Cancel Search"
+                                onClick={() => vscode.postMessage({ command: 'cancel' })}
+                            ></span>
+                        )}
                     </div>
                 )}
                 {backendStatus === 'timeout' && (
@@ -242,6 +258,14 @@ const App: React.FC = () => {
                 >
                     <span slot="start" className="codicon codicon-search"></span>
                 </VSCodeTextField>
+                {mode === 'project' && !forceDeepSearch && enableDeepSearch && displaySymbols.length > 0 && (
+                    <div className="deep-search-container">
+                        <button className="deep-search-button" onClick={() => vscode.postMessage({ command: 'deepSearch' })}>
+                            <span className="codicon codicon-search"></span>
+                            Deep Search
+                        </button>
+                    </div>
+                )}
             </div>
             <div className="tree-container" onScroll={handleScroll}>
                 {isSearching && <div className="loading-indicator">Searching...</div>}
@@ -254,6 +278,7 @@ const App: React.FC = () => {
                     onSelect={handleSelect}
                     selectedSymbol={selectedSymbol}
                     defaultExpanded={!!query}
+                    forceDeepSearch={forceDeepSearch}
                 />
             </div>
         </div>

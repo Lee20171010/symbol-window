@@ -125,3 +125,36 @@ body {
     align-items: center;
     gap: 5px;
 }
+
+.cancel-button {
+    cursor: pointer;
+    margin-left: 8px;
+    font-size: 14px;
+    vertical-align: middle;
+}
+
+.cancel-button:hover {
+    color: var(--vscode-errorForeground);
+}
+
+.deep-search-container {
+    padding: 4px 0;
+    text-align: center;
+}
+
+.deep-search-button {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: none;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9em;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.deep-search-button:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
