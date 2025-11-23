@@ -33,9 +33,13 @@ You can customize the appearance of the symbol list via VS Code settings:
 
 ## Usage
 
-1.  **Open the View**: Click the "Symbol Window" icon in the Activity Bar (usually on the left).
-2.  **Switch Modes**: Click the "Toggle Mode" icon in the view title area (top right of the panel) to switch between "Current Document" and "Project Workspace".
-3.  **Refresh**: Click the "Refresh" icon to reload symbols or clear the search cache.
+![alt text](media/SymbolWindow.png)
+1.  **Open the View**: Click the "Symbol Window" icon in the Activity Bar (usually on the left).<br>
+![alt text](media/ActivityBar.png)
+2.  **Switch Modes**: Click the "Toggle Mode" icon in the view title area (top right of the panel) to switch between "Current Document" and "Project Workspace".<br>
+![alt text](media/ToggleMode.png)
+3.  **Refresh**: Click the "Refresh" icon to reload symbols or clear the search cache.<br>
+![alt text](media/Refresh.png)
 4.  **Navigate**:
     - **Click**: Select a symbol.
     - **Double-Click**: Jump to the symbol in the editor.
@@ -48,6 +52,23 @@ This extension relies on VS Code's built-in symbol providers. You must have a la
 
 **Note on Large Projects:**
 If you open a large workspace, the extension may show a "Waiting for symbol provider..." status initially. This is normal and indicates that the language server (e.g., C/C++ IntelliSense) is still indexing your files. The view will automatically unlock once the provider is ready.
+
+## Limitations & Enhancements
+
+This extension is built on top of VS Code's native Symbol APIs (`vscode.executeDocumentSymbolProvider` and `vscode.executeWorkspaceSymbolProvider`). While it inherits the underlying capabilities of your installed Language Server Protocol (LSP) extensions, it also provides significant enhancements:
+
+**Enhancements:**
+- **Multi-Keyword Search**: Unlike standard VS Code search which often requires exact order, Symbol Window supports space-separated keywords (e.g., `User Controller`) and performs a client-side intersection. This allows for order-independent matching and more precise filtering.
+- **Structure Visualization**: Provides a persistent tree view for the current document, unlike the transient "Go to Symbol" quick pick.
+
+**Limitations:**
+- **Search Results**: The completeness of the *initial* search results depends on the language extension. If the LSP truncates results (e.g., returns only the first 100 matches for "User"), our enhanced filtering can only operate on that subset.
+- **Indexing Speed**: The "Readiness" of the symbol window depends on how fast your language extension can index the workspace.
+
+## Future Work
+
+1.  **Enhanced Search Capabilities**: Implement advanced search strategies (e.g., hybrid text search) to overcome LSP result truncation limits in large projects.
+2.  **Relation Window**: A planned feature to visualize call hierarchies and symbol relationships (Callers/Callees) directly within the side panel.
 
 ## Known Issues
 
