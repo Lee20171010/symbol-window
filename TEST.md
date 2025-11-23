@@ -76,21 +76,53 @@
     - Type "abc", wait slightly, then type "d". Verify results are for "abcd".
 
 ## 6. State Management & Synchronization
-- [ ] **File Updates**
-    - Modify a symbol in the active file (e.g., rename a function) and **Save**.
-    - **Current Mode**: Verify the name updates in the list.
-    - **Project Mode**: Verify the cache is invalidated (searching for the new name works, old name returns nothing).
-- [ ] **Readiness & Loading**
-    - Open a large workspace (or wait for C/C++ extension to initialize).
-    - Verify the "Waiting for symbol provider..." status is shown if the provider is busy.
+- [ ] **File Updates (Data Freshness)**
+    - **Current Mode**:
+        - Modify a symbol in the active file (e.g., rename a function) and **Save**.
+        - Verify the name updates in the list immediately.
+    - **Project Mode**:
+        - Search for a symbol (e.g., `MyFunction`) and verify it appears.
+        - Rename `MyFunction` to `MyFunctionNew` in the editor and **Save** the file.
+        - Without clicking Refresh, search for `MyFunction` again.
+        - Verify it returns **no results** (proving the old data was invalidated).
+        - Search for `MyFunctionNew`.
+        - Verify it is found immediately.
+- [ ] **Readiness Feedback (Project Mode)**
+    - Open the extension in a large workspace (or one where the language server is slow to start).
+    - Verify the view shows a **Loading Indicator** with text "Waiting for symbol provider...".
     - Verify the search bar is disabled while loading.
-    - Verify the UI automatically unlocks when ready.
+    - Verify the UI automatically unlocks (search bar enabled, loading disappears) when ready.
 - [ ] **Transition Flow**
-    - Start with no files open (Empty Workspace).
-    - Open File A. Verify status transitions to Ready and symbols load.
-    - Open File B. Verify status remains Ready (no "Loading" flash) and symbols update.
+    - **Empty to Active (Cold Start)**:
+        - Start with no files open (Empty Workspace).
+        - Verify the Symbol Window is empty and shows no loading spinner (UI is "Ready").
+        - Open a file in a large project (where LSP takes time).
+        - Verify the "Waiting for symbol provider..." loading state appears immediately.
+        - Verify symbols load once the LSP is ready.
+    - **Active to Active**:
+        - Open File A. Verify status transitions to Ready and symbols load.
+        - Open File B. Verify status remains Ready (no "Loading" flash) and symbols update.
+- [ ] **Timeout & Retry Feedback**
+    - If the extension stays in "Loading..." for too long (simulated timeout), verify a **"Timeout" or "Error" message** appears (e.g., red text).
+    - Click the **Refresh Button**.
+    - Verify the error message disappears, and the "Loading..." state reappears as it retries.
+- [ ] **"Best Effort" Responsiveness**
+    - Trigger a "Loading" or "Timeout" state in Project Mode (e.g., by opening a huge folder).
+    - Switch to **Current Document Mode**.
+    - Verify the list **immediately** populates with symbols for the active file, ignoring the Project Mode error/loading state.
 
-## 7. Additional Considerations (Edge Cases)
+## 7. Performance & User Experience
+- [ ] **Instant Search (Cache Verification)**
+    - Type a query (e.g., "Controller") in Project Mode. Note the time it takes to appear (e.g., ~1 second).
+    - Clear the search bar.
+    - Type "Controller" again immediately.
+    - Verify the results appear **instantly** (perceptibly faster than the first time), indicating efficient reuse of data.
+- [ ] **Manual Refresh**
+    - Perform a search and see results.
+    - Click the **Refresh Button**.
+    - Verify the view briefly flashes or shows a loading state, indicating that a fresh search is being performed against the workspace.
+
+## 8. Additional Considerations (Edge Cases)
 - [ ] **Pagination / Infinite Scroll** (Project Mode)
     - Search for a common term (e.g., `e`) that returns > 100 results.
     - Scroll to the bottom of the list.

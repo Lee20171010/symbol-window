@@ -24,8 +24,9 @@ export class SymbolController {
     private loadedCount: number = 0;
     private readonly BATCH_SIZE = 100;
     
-    private isReady: boolean = false;
-    private isFakeReady: boolean = false; // Track if we are ready just because no editor is open
+    private readiness: 'standby' | 'loading' | 'ready' = 'standby';
+    private retryCount: number = 0;
+    private readonly MAX_RETRIES = 20; // 20 * 3s = 60s
     private probeIndex: number = 0;
     private readonly PROBE_CHARS = ['', 'e', 'a', 'i', 'o', 'u', 's', 't', 'r', 'n']; // Common letters
 
@@ -38,43 +39,43 @@ export class SymbolController {
 
         // Listen to active editor changes
         vscode.window.onDidChangeActiveTextEditor(editor => {
-            // When user opens a file, C/C++ extension might start indexing.
-            // We should check readiness again ONLY if we were not ready, or if we were "fake ready" (empty state).
-            // This avoids flickering "Waiting..." on every tab switch when we are already fully ready.
-            if (!this.isReady || this.isFakeReady) {
-                this.checkReadiness();
-            } else {
-                // If we are already ready, ensure UI knows it.
-                // This fixes the case where UI might be stuck in loading for some reason.
-                this.provider?.postMessage({ command: 'status', status: 'ready' });
-            }
-
+            // Current Mode: Always try to update immediately, independent of workspace readiness
             if (this.currentMode === 'current') {
                 if (editor) {
-                    // Force update even if isReady is true, because we switched file
                     this.updateCurrentSymbols(editor.document.uri).catch(e => {
                         console.error('[SymbolWindow] updateCurrentSymbols failed', e);
                     });
                 } else {
-                    // No active editor, clear symbols
                     this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
                 }
+            }
+
+            // Workspace Readiness Logic
+            if (this.readiness === 'standby') {
+                // Trigger polling if we have an editor (signal that user is working)
+                if (editor) {
+                    this.startPolling();
+                }
+            } else if (this.readiness === 'ready') {
+                // Ensure UI knows we are ready (in case of reload)
+                this.provider?.postMessage({ command: 'status', status: 'ready' });
             }
         }, null, context.subscriptions);
 
         // Listen to document changes (re-parse symbols)
-        // User requested to only update on Save, not on every change.
-
-        // Clear cache on file save to ensure freshness AND update current symbols
         vscode.workspace.onDidSaveTextDocument(async (doc) => {
             // 1. Clear Project Cache (Always)
             this.searchCache.clear();
 
-            // 2. Re-check readiness
-            // This will lock the UI (status: loading) for BOTH modes and poll until symbols are available.
-            // Once ready, it will trigger refresh() to update the view.
-            // Use a shorter interval (500ms) for save events as re-indexing should be fast.
-            this.checkReadiness(500);
+            // 2. Current Mode: Update immediately
+            if (this.currentMode === 'current') {
+                this.updateCurrentSymbols(doc.uri);
+            }
+
+            // 3. Workspace Readiness: If standby, try polling again (maybe saving fixed LSP?)
+            if (this.readiness === 'standby') {
+                this.startPolling();
+            }
         }, null, context.subscriptions);
         
         // Listen to selection changes for sync
@@ -96,14 +97,11 @@ export class SymbolController {
         // Sync mode to webview to ensure consistency
         this.provider?.postMessage({ command: 'setMode', mode: this.currentMode });
 
-        // Send current status to ensure Webview is in sync.
-        // This is critical because if the Webview reloads or connects late, it might have missed the initial status update.
-        this.provider?.postMessage({ command: 'status', status: this.isReady ? 'ready' : 'loading' });
-
-        // Always check readiness first if not ready
-        if (!this.isReady) {
-            this.checkReadiness();
-            return;
+        // If standby, try polling again (Manual Retry)
+        if (this.readiness === 'standby') {
+            this.startPolling();
+        } else {
+             this.provider?.postMessage({ command: 'status', status: this.readiness });
         }
 
         if (this.currentMode === 'current') {
@@ -113,11 +111,18 @@ export class SymbolController {
             } else {
                 // No active editor, clear symbols
                 this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
+                this.provider?.postMessage({ command: 'status', status: 'ready' });
             }
-        } else {
-            // Project mode refresh: Ask webview to re-send search query
-            this.provider?.postMessage({ command: 'refresh' });
+            return;
         }
+
+        // Project Mode Logic
+        if (this.readiness === 'loading') {
+            return;
+        }
+        
+        // Project mode refresh: Ask webview to re-send search query
+        this.provider?.postMessage({ command: 'refresh' });
     }
 
     public toggleMode() {
@@ -127,25 +132,31 @@ export class SymbolController {
             this.provider.postMessage({ command: 'setMode', mode: this.currentMode });
         }
         
-        // Don't call refresh here directly, let readiness check handle it if needed
-        // or if already ready, refresh.
-        if (this.isReady) {
+        // If ready, refresh. If standby, maybe poll?
+        if (this.readiness === 'ready') {
             this.refresh();
-        } else {
-            this.checkReadiness();
+        } else if (this.readiness === 'standby') {
+            this.startPolling();
         }
     }
 
-    public async checkReadiness(interval: number = 3000) {
-        // Probe to check if symbol provider is ready
-        
-        // Only set loading if we are not already ready.
-        // If we are FakeReady, we treat it as "Optimistically Ready", so we DON'T show loading.
-        // This prevents the UI from locking up ("Waiting...") when switching from an empty state to a file.
-        if (!this.isReady) {
-            this.provider?.postMessage({ command: 'status', status: 'loading' });
+    public async startPolling() {
+        if (this.readiness === 'loading' || this.readiness === 'ready') {
+            return;
         }
         
+        this.readiness = 'loading';
+        this.retryCount = 0;
+        this.provider?.postMessage({ command: 'status', status: 'loading' });
+        
+        this.poll();
+    }
+
+    private async poll() {
+        if (this.readiness !== 'loading') {
+            return; // Guard
+        }
+
         try {
             // Rotate probe characters
             const probeChar = this.PROBE_CHARS[this.probeIndex];
@@ -158,47 +169,56 @@ export class SymbolController {
 
             // If we are in Current Mode and there is no active editor, we are "ready" (empty state).
             if (this.currentMode === 'current' && !hasActiveEditor) {
-                this.isReady = true;
-                this.isFakeReady = true;
+                // We set readiness to 'standby' so that when an editor IS opened, 
+                // onDidChangeActiveTextEditor will trigger startPolling() again.
+                // We tell the UI we are 'ready' just to stop the spinner.
+                this.readiness = 'standby';
                 this.provider?.postMessage({ command: 'status', status: 'ready' });
-                this.refresh();
+                this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
                 return;
             }
 
             if (result.length > 0 || (!hasWorkspace) || (!hasActiveEditor)) {
                 // If we found symbols OR no workspace OR no editor open
-                this.isReady = true;
-                
-                // If result > 0, it's real ready. If 0 but no editor/workspace, it's fake ready.
-                this.isFakeReady = result.length === 0;
-
+                this.readiness = 'ready';
                 this.provider?.postMessage({ command: 'status', status: 'ready' });
                 
                 // Trigger refresh to update UI (Current: re-fetch symbols, Project: re-run search)
                 this.refresh();
                 return; // Stop recursion
             } else {
-                // If we were NOT ready, ensure we stay not ready and show loading.
-                // If we WERE ready (FakeReady), we keep isReady=true to allow search, but we retry.
-                if (!this.isReady) {
-                    this.provider?.postMessage({ command: 'status', status: 'loading' });
+                // Fail condition
+                this.retryCount++;
+                if (this.retryCount > this.MAX_RETRIES) {
+                    this.readiness = 'standby'; // Back to standby (timeout)
+                    if (this.currentMode === 'project') {
+                        this.provider?.postMessage({ command: 'status', status: 'timeout' });
+                    }
+                    return;
                 }
                 
                 // Retry after a delay
-                setTimeout(() => this.checkReadiness(interval), interval);
+                setTimeout(() => this.poll(), 3000);
             }
         } catch (e) {
-            if (!this.isReady) {
-                this.provider?.postMessage({ command: 'status', status: 'loading' });
+            // Fail condition
+            this.retryCount++;
+            if (this.retryCount > this.MAX_RETRIES) {
+                this.readiness = 'standby'; // Back to standby (timeout)
+                if (this.currentMode === 'project') {
+                    this.provider?.postMessage({ command: 'status', status: 'timeout' });
+                }
+                return;
             }
-            setTimeout(() => this.checkReadiness(interval), interval);
+            setTimeout(() => this.poll(), 3000);
         }
     }
 
+    // Removed checkReadiness method as it is replaced by startPolling/poll
     public async handleSearch(query: string) {
         if (this.currentMode === 'project') {
             // If not ready, don't search, just ensure UI is in loading state
-            if (!this.isReady) {
+            if (this.readiness !== 'ready') {
                 this.provider?.postMessage({ command: 'status', status: 'loading' });
                 return;
             }
@@ -320,6 +340,12 @@ export class SymbolController {
                         // ignore
                     } else {
                         console.error(`[SymbolWindow] SearchId ${searchId} failed`, error);
+                        
+                        // LSP Crash / Error Recovery
+                        // If the search fails (e.g. LSP crash), revert to standby and try to recover
+                        this.readiness = 'standby';
+                        this.provider?.postMessage({ command: 'status', status: 'loading' }); // Show loading in UI
+                        this.startPolling();
                     }
                     return;
                 }
@@ -330,9 +356,10 @@ export class SymbolController {
     private async updateCurrentSymbols(uri: vscode.Uri) {
         const symbols = await this.model.getDocumentSymbols(uri);
         
-        // Ensure UI is unlocked when we successfully get symbols
-        // This is a safety net in case the UI was stuck in loading state
-        this.provider?.postMessage({ command: 'status', status: 'ready' });
+        // Note: We do NOT force status to 'ready' here anymore.
+        // We rely on the global readiness state (determined by workspace polling)
+        // to tell the UI when to stop loading. This prevents "False Ready" states
+        // where we get empty symbols because the LSP is initializing.
         
         this.provider?.postMessage({ command: 'updateSymbols', symbols });
     }

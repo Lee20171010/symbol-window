@@ -116,3 +116,12 @@ body {
     align-items: center;
     gap: 5px;
 }
+
+.status-error {
+    font-size: 0.85em;
+    color: var(--vscode-errorForeground);
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}

@@ -131,6 +131,23 @@ src/
 3.  **Search:** User types in React SearchBar -> React filters locally (Current Mode) OR sends `search` message to Extension (Project Mode).
 4.  **Navigation:** User double-clicks item in React -> Sends `jump` message to Extension -> Extension opens file & reveals range.
 
+### 5.4 Readiness State Machine
+The `SymbolController` maintains a state machine to handle the availability of the Language Server Protocol (LSP).
+
+- **States:**
+    - `standby`: Initial state, or after a timeout/error. The extension is waiting for a trigger to check availability.
+    - `loading`: The extension is actively polling `getWorkspaceSymbols` to check if the LSP is ready.
+    - `ready`: The LSP has successfully returned symbols.
+- **Transitions:**
+    - `standby` -> `loading`: Triggered by `startPolling()` (e.g., on activation or manual retry).
+    - `loading` -> `ready`: Polling succeeds (symbols returned or empty result with no error).
+    - `loading` -> `standby`: Polling times out (MAX_RETRIES exceeded) or fails repeatedly.
+    - `ready` -> `standby`: Triggered by an LSP crash or error during search.
+- **Mode-Specific Behavior:**
+    - **Project Mode:** Strictly respects the state. If `standby` (timeout), it shows an error. If `loading`, it shows a spinner.
+    - **Current Mode:** Also respects the global readiness state. It will fetch and display symbols if available, but the UI will remain in a "Loading" state until the global polling confirms the LSP is fully ready.
+        - **Exception:** If no editor is active, the UI shows "Ready" (empty state) to avoid a perpetual spinner, but the internal state remains `standby` to trigger polling immediately when an editor is opened.
+
 ## 6. Future Improvements
 - **Sync Selection:** Implement logic to highlight the symbol in the tree when the cursor moves in the editor.
 - **Sorting:** Add toggle to sort symbols by Name vs. Position.

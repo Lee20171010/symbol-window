@@ -15,7 +15,7 @@ const App: React.FC = () => {
     const [totalCount, setTotalCount] = useState<number>(0);
     const [selectedSymbol, setSelectedSymbol] = useState<SymbolItem | null>(null);
     const [isSearching, setIsSearching] = useState(false);
-    const [backendStatus, setBackendStatus] = useState<'ready' | 'loading'>(
+    const [backendStatus, setBackendStatus] = useState<'ready' | 'loading' | 'timeout'>(
         (savedState.mode || 'current') === 'project' ? 'loading' : 'ready'
     );
 
@@ -227,12 +227,18 @@ const App: React.FC = () => {
                         Waiting for symbol provider...
                     </div>
                 )}
+                {backendStatus === 'timeout' && (
+                    <div className="status-error">
+                        <span className="codicon codicon-warning"></span>
+                        Symbol provider not ready. Open a file to retry.
+                    </div>
+                )}
                 <VSCodeTextField 
                     placeholder={mode === 'current' ? "Filter symbols..." : "Search workspace..."}
                     value={query}
                     onInput={handleSearch}
                     style={{ width: '100%' }}
-                    disabled={backendStatus === 'loading'}
+                    disabled={backendStatus === 'loading' || backendStatus === 'timeout'}
                 >
                     <span slot="start" className="codicon codicon-search"></span>
                 </VSCodeTextField>
