@@ -1,7 +1,7 @@
 {
-  "name": "symbol-window",
+  "name": "symbol-relation-window",
   "displayName": "Symbol Window",
-  "description": "A Source Insight-like symbol navigation side panel for VS Code. Features a native tree view for the current document and a powerful workspace-wide symbol search.",
+  "description": "Source Insight-like symbol navigation and workspace search.",
   "version": "0.0.1",
   "publisher": "ytlee",
   "license": "MIT",
@@ -88,6 +88,21 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "title": "Symbol Window",
+      "properties": {
+        "symbolWindow.cleanCStyleTypes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically move C/C++ style type suffixes (e.g., (struct), (typedef)) from the symbol name to the detail view."
+        },
+        "symbolWindow.moveSignatureToDetail": {
+          "type": "boolean",
+          "default": true,
+          "description": "Move function signatures/parameters (e.g., (int a, char b)) from the symbol name to the detail view for a cleaner list."
+        }
+      }
     }
   },
   "scripts": {

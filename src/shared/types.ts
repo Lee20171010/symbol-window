@@ -7,6 +7,7 @@ export interface SymbolItem {
     children: SymbolItem[];
     uri?: string; // For workspace symbols
     containerName?: string;
+    autoExpand?: boolean;
 }
 
 export type SymbolMode = 'current' | 'project';

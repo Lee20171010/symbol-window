@@ -21,6 +21,16 @@ A Visual Studio Code extension that provides a "Source Insight"-like symbol navi
 - **Icons**: Uses standard VS Code Codicons.
 - **Theme Aware**: Automatically adapts to Light, Dark, and High Contrast themes.
 
+## Configuration
+
+You can customize the appearance of the symbol list via VS Code settings:
+
+- **`symbolWindow.cleanCStyleTypes`** (Default: `true`):  
+  Moves C-style type suffixes (e.g., `(typedef)`, `(struct)`) from the symbol name to the detail view (gray text).
+  
+- **`symbolWindow.moveSignatureToDetail`** (Default: `true`):  
+  Moves function signatures/parameters (e.g., `(int a, char b)`) from the symbol name to the detail view.
+
 ## Usage
 
 1.  **Open the View**: Click the "Symbol Window" icon in the Activity Bar (usually on the left).

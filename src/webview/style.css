@@ -78,20 +78,26 @@ body {
 }
 
 .symbol-name {
-    flex: 1;
+    flex-shrink: 0; /* Prevent name from shrinking */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 70%; /* Ensure name doesn't take up entire space if detail is long */
+    margin-right: 5px;
 }
 
 .symbol-detail {
-    display: none; /* Hidden by default to reduce clutter */
-    opacity: 0.7;
-    font-size: 0.9em;
-    margin-left: 5px;
+    flex: 1; /* Allow detail to shrink */
+    display: inline-block;
+    opacity: 0.6;
+    font-size: 0.85em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--vscode-descriptionForeground);
+    min-width: 0; /* Allow flex item to shrink below content size */
+    text-align: right; /* Align text to the right */
+    margin-left: auto; /* Push to the right */
 }
 
 .no-results {
