@@ -6,20 +6,21 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.0.4] - 2025-11-25
 
-### Added
-- **Advanced Deep Search Filtering**:
-    - **Search Scope**: Users can now limit Deep Search to specific folders.
-    - **Files to Include**: Added support for glob patterns (e.g., `*.ts`, `src/**`) to filter search results.
-- **Search Details Panel**: A new toggleable panel in the search bar (Project Mode) to access advanced filtering options.
-- **State Persistence**: The extension now remembers the Search Scope, Include Patterns, and Details Panel visibility across sessions.
-
 ### Changed
+- **Deep Search Graduation**: Deep Search is no longer experimental and is now enabled by default (`symbolWindow.enableDeepSearch` defaults to `true`).
 - **Deep Search Optimization**: Implemented Regex Permutations for multi-keyword matching to significantly improve search speed with `ripgrep`.
 - **UI Polish**: Updated the Search Details UI to match VS Code's native design (transparent backgrounds, better spacing).
 - **UX Improvements**:
     - Deep Search results are now collapsed by default to reduce clutter.
     - Added `Esc` key support to clear the "Files to Include" input.
     - The "Search Details" toggle is now only visible when Deep Search is enabled.
+
+### Added
+- **Advanced Deep Search Filtering**:
+    - **Search Scope**: Users can now limit Deep Search to specific folders.
+    - **Files to Include**: Added support for glob patterns (e.g., `*.ts`, `src/**`) to filter search results.
+- **Search Details Panel**: A new toggleable panel in the search bar (Project Mode) to access advanced filtering options.
+- **State Persistence**: The extension now remembers the Search Scope, Include Patterns, and Details Panel visibility across sessions.
 
 ## [0.0.2] - 2025-11-24
 

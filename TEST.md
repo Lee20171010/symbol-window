@@ -70,7 +70,7 @@
     - Type "Controller" again immediately.
     - Verify the results appear **instantly** (perceptibly faster than the first time), indicating efficient reuse of data.
 
-## 5. Deep Search (Experimental)
+## 5. Deep Search
 - [ ] **Enable Deep Search**
     - Set `symbolWindow.enableDeepSearch` to `true`.
     - Switch to Project Mode.

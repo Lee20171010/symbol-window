@@ -96,9 +96,9 @@
         - Step 4: Cache the results for each keyword.
         - Step 5: Collect all cached results for the current keywords.
         - Step 6: Filter the collected results in memory to ensure each symbol matches **ALL** keywords.
-    - **Deep Search (Text Scan Fallback) [Experimental]:**
+    - **Deep Search (Text Scan Fallback):**
         - **Configuration:**
-            - `symbolWindow.enableDeepSearch`: Master switch (Default: `false`).
+            - `symbolWindow.enableDeepSearch`: Master switch (Default: `true`).
             - `symbolWindow.forceDeepSearch`: Auto-trigger switch (Default: `false`).
         - **Trigger:**
             - Manual button click in Project Mode (if `enableDeepSearch` is true).

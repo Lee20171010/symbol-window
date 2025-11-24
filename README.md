@@ -15,7 +15,7 @@ A Visual Studio Code extension that provides a "Source Insight"-like symbol navi
 - **Multi-keyword Support**: Supports space-separated keywords (e.g., `user controller` matches `UserController`).
 - **Performance**: Optimized with debouncing and caching for large projects.
 - **Infinite Scroll**: Automatically loads more results as you scroll.
-- **Deep Search (Experimental)**: A powerful hybrid search mode that combines text scanning (Ripgrep) with symbol parsing (LSP) to find results in large projects where standard LSP searches might be truncated.
+- **Deep Search**: A powerful hybrid search mode that combines text scanning (Ripgrep) with symbol parsing (LSP) to find results in large projects where standard LSP searches might be truncated.
     - **Advanced Filtering**:
         - **Search Scope**: Limit the search to a specific folder.
         - **Files to Include**: Filter results using glob patterns (e.g., `src/**/*.ts`).
@@ -36,11 +36,11 @@ You can customize the appearance of the symbol list via VS Code settings:
 - **`symbolWindow.moveSignatureToDetail`** (Default: `true`):  
   Moves function signatures/parameters (e.g., `(int a, char b)`) from the symbol name to the detail view.
 
-- **`symbolWindow.enableDeepSearch`** (Default: `false`):  
-  **[Experimental]** Enables the "Deep Search" feature in Project Mode. This feature uses `ripgrep` to scan files when standard symbol search is insufficient.
+- **`symbolWindow.enableDeepSearch`** (Default: `true`):  
+  Enables the "Deep Search" feature in Project Mode. This feature uses `ripgrep` to scan files when standard symbol search is insufficient.
 
 - **`symbolWindow.forceDeepSearch`** (Default: `false`):  
-  **[Experimental]** If enabled (and `enableDeepSearch` is true), the extension will *always* use Deep Search for every query in Project Mode, skipping the standard LSP search. This is useful for very large codebases where LSP search is consistently incomplete.
+  If enabled (and `enableDeepSearch` is true), the extension will *always* use Deep Search for every query in Project Mode, skipping the standard LSP search. This is useful for very large codebases where LSP search is consistently incomplete.
 
 ## Usage
 
@@ -58,8 +58,8 @@ Click the "Refresh" icon to reload symbols or clear the search cache.
     - **Double-Click**: Jump to the symbol in the editor.
     - **Arrow Keys**: Navigate the list.
     - **Enter**: Jump to the selected symbol.
-5.  **Deep Search (Experimental)**: ![alt text](media/DeepSearch.png)
-    - *Note: This feature must be enabled via `symbolWindow.enableDeepSearch` in settings.*
+5.  **Deep Search**: ![alt text](media/DeepSearch.png)
+    - *Note: This feature is enabled by default via `symbolWindow.enableDeepSearch`.*
     - **Toggle Details**: In **Project Mode**, click the `...` (kebab) icon in the search bar to reveal advanced options.
     - **Scope**: Click the folder icon to select a specific root directory for your search.
     - **Files to Include**: Enter glob patterns (e.g., `*.ts`, `src/**`) to filter the files being searched.

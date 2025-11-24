@@ -124,13 +124,13 @@
         },
         "symbolWindow.enableDeepSearch": {
           "type": "boolean",
-          "default": false,
-          "description": "(Experimental) Enable the Deep Search feature, which uses text scanning (Ripgrep) to find symbols when LSP results are truncated."
+          "default": true,
+          "description": "Enable the Deep Search feature, which uses text scanning (Ripgrep) to find symbols when LSP results are truncated."
         },
         "symbolWindow.forceDeepSearch": {
           "type": "boolean",
           "default": false,
-          "description": "(Experimental) Always perform a Deep Search when searching in Project Mode. Requires 'symbolWindow.enableDeepSearch' to be true."
+          "description": "Always perform a Deep Search when searching in Project Mode. Requires 'symbolWindow.enableDeepSearch' to be true."
         }
       }
     }
