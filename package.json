@@ -2,13 +2,16 @@
   "name": "symbol-relation-window",
   "displayName": "Symbol Window",
   "description": "Source Insight-like symbol navigation and workspace search.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "ytlee",
   "license": "MIT",
   "author": {
     "name": "ytlee",
     "url": "https://github.com/Lee20171010"
   },
+  "activationEvents": [
+    "onView:symbol-window-view"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Lee20171010/symbol-window"
