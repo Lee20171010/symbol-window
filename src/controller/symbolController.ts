@@ -13,6 +13,8 @@ export class SymbolController {
     private searchCts: vscode.CancellationTokenSource | undefined;
     
     private currentQuery: string = '';
+    private currentScopePath: string | undefined;
+    private currentIncludePattern: string | undefined;
 
     // Caching
     private searchCache: Map<string, SymbolItem[]> = new Map();
@@ -36,6 +38,8 @@ export class SymbolController {
         
         // Restore state
         this.currentMode = this.context.workspaceState.get<SymbolMode>('symbolWindow.mode', 'current');
+        this.currentScopePath = this.context.workspaceState.get<string>('symbolWindow.scopePath');
+        vscode.commands.executeCommand('setContext', 'symbolWindow.mode', this.currentMode);
 
         // Listen to active editor changes
         vscode.window.onDidChangeActiveTextEditor(editor => {
@@ -106,6 +110,9 @@ export class SymbolController {
                 enableDeepSearch: config.get<boolean>('enableDeepSearch', false)
             }
         });
+        
+        // Sync scope
+        this.provider?.postMessage({ command: 'setScope', scopePath: this.currentScopePath });
 
         // If standby, try polling again (Manual Retry)
         if (this.readiness === 'standby') {
@@ -138,6 +145,7 @@ export class SymbolController {
     public toggleMode() {
         this.currentMode = this.currentMode === 'current' ? 'project' : 'current';
         this.context.workspaceState.update('symbolWindow.mode', this.currentMode);
+        vscode.commands.executeCommand('setContext', 'symbolWindow.mode', this.currentMode);
         if (this.provider) {
             this.provider.postMessage({ command: 'setMode', mode: this.currentMode });
             
@@ -244,8 +252,11 @@ export class SymbolController {
     }
 
     // Removed checkReadiness method as it is replaced by startPolling/poll
-    public async handleSearch(query: string) {
+    public async handleSearch(query: string, includePattern?: string) {
         if (this.currentMode === 'project') {
+            // Update include pattern
+            this.currentIncludePattern = includePattern;
+
             // If not ready, don't search, just ensure UI is in loading state
             if (this.readiness !== 'ready') {
                 this.provider?.postMessage({ command: 'status', status: 'loading' });
@@ -328,7 +339,7 @@ export class SymbolController {
                     // Standard Search Logic (LSP)
                     // Fetch missing keywords
                     if (missingKeywords.length > 0) {
-                        const searchPromises = missingKeywords.slice(0, 3).map(async (keyword) => {
+                        const searchPromises = missingKeywords.map(async (keyword) => {
                             const results = await this.model.getWorkspaceSymbols(keyword, token);
                             return { keyword, results };
                         });
@@ -454,12 +465,16 @@ export class SymbolController {
         // If auto-triggered, we don't want to set status to loading if it's already loading?
         // Actually, handleSearch sets 'searchStart' which might set loading.
         // But deepSearch is async.
-        if (!isAuto) {
-            this.provider?.postMessage({ command: 'status', status: 'loading' });
-        }
+        this.provider?.postMessage({ command: 'status', status: 'loading' });
 
         try {
-            const textSearchResults = await this.model.findSymbolsByTextSearch(this.currentQuery, keywords, this.searchCts?.token);
+            const textSearchResults = await this.model.findSymbolsByTextSearch(
+                this.currentQuery, 
+                keywords, 
+                this.searchCts?.token,
+                this.currentScopePath,
+                this.currentIncludePattern
+            );
             
             // Check cancellation
             if (this.searchCts?.token.isCancellationRequested) {
@@ -503,6 +518,47 @@ export class SymbolController {
             console.error('[SymbolWindow] Deep search failed', e);
         } finally {
             this.provider?.postMessage({ command: 'status', status: 'ready' });
+        }
+    }
+
+    public setScope(path: string) {
+        this.currentScopePath = path;
+        this.context.workspaceState.update('symbolWindow.scopePath', this.currentScopePath);
+        
+        // Switch to project mode if not already
+        if (this.currentMode !== 'project') {
+            this.toggleMode();
+        }
+        
+        this.provider?.postMessage({ command: 'setScope', scopePath: this.currentScopePath });
+        
+        // Trigger search if query exists
+        if (this.currentQuery) {
+            this.handleSearch(this.currentQuery, this.currentIncludePattern);
+        }
+    }
+
+    public clearScope() {
+        this.currentScopePath = undefined;
+        this.context.workspaceState.update('symbolWindow.scopePath', undefined);
+        this.provider?.postMessage({ command: 'setScope', scopePath: undefined });
+        
+        // Trigger search if query exists
+        if (this.currentQuery) {
+            this.handleSearch(this.currentQuery, this.currentIncludePattern);
+        }
+    }
+
+    public async selectScope() {
+        const uris = await vscode.window.showOpenDialog({
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            title: 'Select Search Scope'
+        });
+
+        if (uris && uris.length > 0) {
+            this.setScope(uris[0].fsPath);
         }
     }
 }

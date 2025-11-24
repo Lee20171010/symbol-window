@@ -13,9 +13,13 @@ A Visual Studio Code extension that provides a "Source Insight"-like symbol navi
 ### 2. Project Workspace Mode
 - **Global Search**: Search for symbols across the entire workspace.
 - **Multi-keyword Support**: Supports space-separated keywords (e.g., `user controller` matches `UserController`).
-- **Deep Search (Experimental)**: A powerful hybrid search mode that combines text scanning (Ripgrep) with symbol parsing (LSP) to find results in large projects where standard LSP searches might be truncated.
 - **Performance**: Optimized with debouncing and caching for large projects.
 - **Infinite Scroll**: Automatically loads more results as you scroll.
+- **Deep Search (Experimental)**: A powerful hybrid search mode that combines text scanning (Ripgrep) with symbol parsing (LSP) to find results in large projects where standard LSP searches might be truncated.
+    - **Advanced Filtering**:
+        - **Search Scope**: Limit the search to a specific folder.
+        - **Files to Include**: Filter results using glob patterns (e.g., `src/**/*.ts`).
+    - **Optimized Matching**: Uses regex permutations for fast multi-keyword matching.
 
 ### 3. Native Experience
 - **UI**: Built with `@vscode/webview-ui-toolkit` to match VS Code's native design.
@@ -56,9 +60,10 @@ Click the "Refresh" icon to reload symbols or clear the search cache.
     - **Enter**: Jump to the selected symbol.
 5.  **Deep Search (Experimental)**: ![alt text](media/DeepSearch.png)
     - *Note: This feature must be enabled via `symbolWindow.enableDeepSearch` in settings.*
-    - In **Project Mode**, if you cannot find a symbol due to too many results (LSP truncation), click the **"Deep Search"** button below the search bar.
-    - This triggers a full-text scan of the workspace to find files containing your keywords, then parses them for precise symbols.
-    - Deep Search results appear at the top of the list.
+    - **Toggle Details**: In **Project Mode**, click the `...` (kebab) icon in the search bar to reveal advanced options.
+    - **Scope**: Click the folder icon to select a specific root directory for your search.
+    - **Files to Include**: Enter glob patterns (e.g., `*.ts`, `src/**`) to filter the files being searched.
+    - **Deep Search**: If standard LSP search is insufficient, the extension automatically leverages `ripgrep` with optimized regex permutations to find symbols across your defined scope.
 
 
 ## Requirements

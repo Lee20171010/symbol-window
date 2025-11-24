@@ -24,6 +24,10 @@
 ### 3.2 Layout
 - **Technology:** **Webview View** (using React). This is necessary to implement the "Always-visible Search Bar" and custom filtering logic that standard VS Code TreeViews cannot support.
 - **Search Bar:** Fixed at the top of the view.
+    - **Project Mode:** Includes a "Toggle Search Details" (kebab menu) button when Deep Search is enabled.
+- **Search Details Panel:** (Project Mode and DeepSearch only)
+    - **Scope Control:** Display current scope path, button to select folder, button to clear scope.
+    - **Files to Include:** Input field for glob patterns.
 - **Symbol Tree:** The main area displaying the list/tree of symbols below the search bar.
 - **Mode Switching:**
     - **Mechanism:** Icons/Buttons in the View Title area (top right of the panel).
@@ -43,7 +47,7 @@
     - `Arrow Left/Right`: Move cursor within the Search Bar (when focused).
     - `Enter`: Jump to the selected symbol (same as Double Click).
 - **State Persistence:**
-    - The extension remembers the last active mode (Current vs. Project) and the search query when the view is hidden or VS Code is restarted using `vscode.Memento`.
+    - The extension remembers the last active mode (Current vs. Project), search query, details panel visibility (`showDetails`), and include pattern (`includePattern`) when the view is hidden or VS Code is restarted using `vscode.Memento`.
 
 ## 4. Functional Requirements
 
@@ -63,15 +67,18 @@
     - **Icons:** Use VS Code Codicons mapped to `vscode.SymbolKind`.
 
 ### 4.2 Mode: Project Symbols
-- **Data Source:** `vscode.executeWorkspaceSymbolProvider`.
+- **Data Source:** `vscode.executeWorkspaceSymbolProvider` (Standard) + `ripgrep` (Deep Search).
 - **Default State:** Empty (to save resources and reduce noise).
 - **Search:**
     - Triggered only when the user types.
     - **Debounce:** 300ms delay to prevent API flooding.
     - **Cancellation:** If user continues typing, cancel the previous pending API request.
+    - **Scope (Deep Search only):** User can select a specific folder to limit the search context.
+    - **Files to Include (Deep Search only):** User can provide glob patterns to filter files.
     - **Result Display:** Show all matching symbols from the workspace.
         - **Pagination:** Infinite scroll mechanism loads more results (batches of 100) as the user scrolls to the bottom.
-- **Display:** Flat list.
+        - **Expansion:** Results are collapsed by default to show more items.
+- **Display:** Flat list (grouped by file).
 
 ### 4.3 Search Logic
 - **Debouncing:** 300ms delay.
@@ -96,6 +103,10 @@
         - **Trigger:**
             - Manual button click in Project Mode (if `enableDeepSearch` is true).
             - Automatic if `forceDeepSearch` is true.
+            - Fallback if standard search yields insufficient results (implementation detail).
+        - **Optimization:**
+            - **Regex Permutations:** Generates regex for all permutations of keywords (up to 5) to allow order-independent matching directly in `ripgrep` (e.g., `A.*B|B.*A`).
+            - **Ripgrep Options:** Uses `--multiline`, `--multiline-dotall`, and `--max-columns 1000` (to skip minified files).
         - **Purpose:** Overcome LSP result truncation (e.g., searching "User" returns only first 100 results).
         - **Strategy:**
             1.  Identify the longest keyword (Primary Keyword).

@@ -38,6 +38,29 @@ export function activate(context: vscode.ExtensionContext) {
 			controller.deepSearch();
 		})
 	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('symbol-window.deepSearchDisabled', async () => {
+			const selection = await vscode.window.showInformationMessage(
+				'Deep Search is currently disabled.',
+				'Open Settings'
+			);
+			if (selection === 'Open Settings') {
+				vscode.commands.executeCommand('workbench.action.openSettings', 'symbolWindow.enableDeepSearch');
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('symbol-window.searchInFolder', async (uri: vscode.Uri) => {
+            if (uri && uri.fsPath) {
+                // Focus the view
+                await vscode.commands.executeCommand('symbol-window-view.focus');
+                // Set scope
+                controller.setScope(uri.fsPath);
+            }
+		})
+	);
 }
 
 export function deactivate() {}

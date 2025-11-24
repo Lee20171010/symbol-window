@@ -40,16 +40,25 @@ export class SymbolModel {
         }
     }
 
-    public async findSymbolsByTextSearch(query: string, keywords: string[], token?: vscode.CancellationToken): Promise<SymbolItem[]> {
-        // Strategy: Use ripgrep to find files containing the LONGEST keyword (most specific).
-        // Then filter the results in memory to ensure ALL keywords are present on the line.
-        // This avoids complex regex lookarounds which might not be supported or slow.
+    public async findSymbolsByTextSearch(
+        query: string, 
+        keywords: string[], 
+        token?: vscode.CancellationToken,
+        scopePath?: string,
+        includePattern?: string
+    ): Promise<SymbolItem[]> {
+        // Strategy: Use ripgrep with regex permutations to find files containing ALL keywords.
+        // Since rg doesn't support lookahead, we use alternation of permutations:
+        // e.g. for "A B", we search "A.*B|B.*A"
+        // We limit this to the top 5 keywords for regex generation to keep it performant
         
         const sortedKeywords = [...keywords].sort((a, b) => b.length - a.length);
-        const primaryKeyword = sortedKeywords[0];
-        const otherKeywords = sortedKeywords.slice(1);
+        // Limit to top 5 keywords for regex generation to keep it performant
+        const regexKeywords = sortedKeywords.slice(0, 5);
+        const remainingKeywords = sortedKeywords.slice(5); // These will be checked in JS if any
         
-        const rootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        // Use provided scopePath or fallback to workspace root
+        const rootPath = scopePath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!rootPath) {
             return [];
         }
@@ -57,20 +66,45 @@ export class SymbolModel {
         const matchedUris = new Set<string>();
 
         try {
-            // rg arguments:
-            // --files-with-matches (-l): Only print filenames
-            // --ignore-case (-i)
-            // --fixed-strings (-F): Treat pattern as literal string (faster)
-            // --glob: Follow .gitignore (default)
+            // Generate permutations
+            const permutations = this.permute(regexKeywords);
+            // Join with .* and then join permutations with |
+            // Escape special regex characters in keywords
+            const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             
-            const args = ['-i', '-F', '-l', primaryKeyword, '.'];
+            const patterns = permutations.map(p => p.map(escapeRegex).join('.*'));
+            const regexPattern = patterns.join('|');
+
+            // rg arguments:
+            // --files-with-matches (-l)
+            // --ignore-case (-i)
+            // --multiline (-U): Allow matching across lines (crucial for "A.*B" where A and B are on different lines)
+            // --multiline-dotall: Allow '.' to match newlines
+            // --glob: Follow .gitignore
+            // --max-columns: Ignore lines longer than 1000 chars (avoids minified files)
+            
+            const args = [
+                '-i', '-l', '-U', '--multiline-dotall', '--max-columns', '1000',
+                '--glob', '!**/*.{txt,log,lock,map,pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,gif,bmp,ico,svg,mp3,mp4,wav,zip,tar,gz,7z,rar,bin,exe,dll,so,dylib,pdb,obj,o,a,min.js,min.css}', 
+                regexPattern, 
+                '.'
+            ];
+
+            // Add user defined include patterns
+            if (includePattern) {
+                // Split by comma and trim
+                const patterns = includePattern.split(',').map(p => p.trim()).filter(p => p.length > 0);
+                patterns.forEach(p => {
+                    args.push('--glob', p);
+                });
+            }
             
             const output = await new Promise<string>((resolve, reject) => {
                 const child = cp.execFile(rgPath, args, { 
                     cwd: rootPath,
                     maxBuffer: 1024 * 1024 * 10 // 10MB buffer
                 }, (err, stdout, stderr) => {
-                    if (err && (err as any).code !== 1) { // code 1 means no matches found, which is fine
+                    if (err && (err as any).code !== 1) { 
                         reject(err);
                     } else {
                         resolve(stdout);
@@ -84,10 +118,7 @@ export class SymbolModel {
 
             const files = output.split('\n').filter(f => f.trim().length > 0);
 
-            // Limit to top 50 files to avoid performance issues
-            const topFiles = files.slice(0, 50);
-
-            for (const file of topFiles) {
+            for (const file of files) {
                 const uri = vscode.Uri.file(vscode.Uri.joinPath(vscode.Uri.file(rootPath), file).fsPath);
                 matchedUris.add(uri.toString());
             }
@@ -102,11 +133,31 @@ export class SymbolModel {
         }
 
         const promises = Array.from(matchedUris).map(async (uriStr) => {
+            if (token?.isCancellationRequested) {
+                return [];
+            }
+
             const uri = vscode.Uri.parse(uriStr);
+
+            // If we had more than 3 keywords, we still need to check the remaining ones
+            // But since we already filtered by the top 3, this set should be small enough to check in JS
+            // Actually, we can just let filterSymbols handle it, or do a quick text check.
+            // Let's do a quick text check if there are remaining keywords.
+            if (remainingKeywords.length > 0) {
+                    try {
+                    const fileData = await vscode.workspace.fs.readFile(uri);
+                    const text = new TextDecoder().decode(fileData).toLowerCase();
+                    const allFound = remainingKeywords.every(k => text.includes(k.toLowerCase()));
+                    if (!allFound) {
+                        return [];
+                    }
+                } catch (e) {
+                    // ignore read error
+                }
+            }
+
             try {
                 const symbols = await this.getDocumentSymbols(uri);
-                // We still need to filter symbols because rg only checked for the primary keyword
-                // and it checked the whole file, not necessarily the symbol definition line.
                 const filtered = this.filterSymbols(symbols, keywords);
                 return filtered;
             } catch (e) {
@@ -117,6 +168,31 @@ export class SymbolModel {
 
         const results = await Promise.all(promises);
         return results.flat();
+    }
+
+    private permute(permutation: string[]): string[][] {
+        const length = permutation.length;
+        const result = [permutation.slice()];
+        const c = new Array(length).fill(0);
+        let i = 1;
+        let k;
+        let p;
+      
+        while (i < length) {
+            if (c[i] < i) {
+                k = i % 2 && c[i];
+                p = permutation[i];
+                permutation[i] = permutation[k];
+                permutation[k] = p;
+                ++c[i];
+                i = 1;
+                result.push(permutation.slice());
+            } else {
+                c[i] = 0;
+                ++i;
+            }
+        }
+        return result;
     }
 
     private filterSymbols(symbols: SymbolItem[], keywords: string[]): SymbolItem[] {

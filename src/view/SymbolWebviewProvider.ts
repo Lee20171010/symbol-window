@@ -38,7 +38,7 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
                     this.controller.refresh();
                     break;
                 case 'search':
-                    this.controller.handleSearch(data.query);
+                    this.controller.handleSearch(data.query, data.includePattern);
                     break;
                 case 'jump':
                     this.controller.jumpTo(data.uri, data.range);
@@ -48,6 +48,13 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'deepSearch':
                     this.controller.deepSearch();
+                    break;
+                case 'selectScope':
+                    this.controller.selectScope();
+                    break;
+                case 'clearScope':
+                    this.controller.clearScope();
+                    break;
                     break;
                 case 'cancel':
                     this.controller.cancelSearch();

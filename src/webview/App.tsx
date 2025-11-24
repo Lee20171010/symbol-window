@@ -20,18 +20,23 @@ const App: React.FC = () => {
     );
     const [forceDeepSearch, setForceDeepSearch] = useState(false);
     const [enableDeepSearch, setEnableDeepSearch] = useState(false);
+    const [scopePath, setScopePath] = useState<string | undefined>(undefined);
+    const [includePattern, setIncludePattern] = useState(savedState.includePattern || '');
+    const [showDetails, setShowDetails] = useState(savedState.showDetails || false);
 
     // Refs for accessing state in event listener
     const modeRef = useRef(mode);
     const queryRef = useRef(query);
+    const includePatternRef = useRef(includePattern);
 
     useEffect(() => { modeRef.current = mode; }, [mode]);
     useEffect(() => { queryRef.current = query; }, [query]);
+    useEffect(() => { includePatternRef.current = includePattern; }, [includePattern]);
 
     // Save state
     useEffect(() => {
-        vscode.setState({ mode, query });
-    }, [mode, query]);
+        vscode.setState({ mode, query, showDetails, includePattern });
+    }, [mode, query, showDetails, includePattern]);
 
     // Handle messages from extension
     useEffect(() => {
@@ -52,6 +57,7 @@ const App: React.FC = () => {
                     // Only clear if mode actually changes
                     if (modeRef.current !== message.mode) {
                         setMode(message.mode);
+                        setQuery(''); // Clear query on mode toggle
                         setSymbols([]);
                         // Don't auto-set status here, rely on backend 'status' message
                     }
@@ -73,11 +79,14 @@ const App: React.FC = () => {
                 case 'refresh':
                     if (modeRef.current === 'project') {
                         // Re-trigger search with current query
-                        vscode.postMessage({ command: 'search', query: queryRef.current });
+                        vscode.postMessage({ command: 'search', query: queryRef.current, includePattern: includePatternRef.current });
                     }
                     break;
                 case 'highlight':
                     // TODO: Implement highlight logic (expand tree and select)
+                    break;
+                case 'setScope':
+                    setScopePath(message.scopePath);
                     break;
             }
         };
@@ -99,7 +108,26 @@ const App: React.FC = () => {
             // Debounce is handled in backend or here? 
             // Spec says "Triggered only when the user types".
             // Let's send every keystroke and let backend debounce.
-            vscode.postMessage({ command: 'search', query: newQuery });
+            vscode.postMessage({ command: 'search', query: newQuery, includePattern: includePatternRef.current });
+        }
+    };
+
+    const handleIncludePatternChange = (e: any) => {
+        const newPattern = e.target.value;
+        setIncludePattern(newPattern);
+        
+        if (mode === 'project' && query) {
+            vscode.postMessage({ command: 'search', query: query, includePattern: newPattern });
+        }
+    };
+
+    const handleIncludePatternKeyDown = (e: any) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setIncludePattern('');
+            if (mode === 'project' && query) {
+                vscode.postMessage({ command: 'search', query: query, includePattern: '' });
+            }
         }
     };
 
@@ -124,6 +152,16 @@ const App: React.FC = () => {
             // Actually, usually we want arrow keys to work even if focused on search box to navigate the list.
             // But if the user is typing, ArrowLeft/Right should work in input. ArrowUp/Down usually navigate list.
             
+            if (e.key === 'Escape') {
+                // Clear search query if focused on search bar or generally if query exists
+                if (queryRef.current.length > 0) {
+                    e.preventDefault();
+                    setQuery('');
+                    vscode.postMessage({ command: 'search', query: '', includePattern: includePatternRef.current });
+                }
+                return;
+            }
+
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 const selectedEl = document.querySelector('.symbol-item.selected');
@@ -257,13 +295,48 @@ const App: React.FC = () => {
                     disabled={backendStatus === 'loading' || backendStatus === 'timeout'}
                 >
                     <span slot="start" className="codicon codicon-search"></span>
+                    {mode === 'project' && enableDeepSearch && (
+                        <span 
+                            slot="end" 
+                            className={`codicon codicon-kebab-vertical ${showDetails ? 'active' : ''}`}
+                            onClick={() => setShowDetails(!showDetails)}
+                            title="Toggle Search Details(DeepSearch)"
+                        ></span>
+                    )}
                 </VSCodeTextField>
-                {mode === 'project' && !forceDeepSearch && enableDeepSearch && displaySymbols.length > 0 && (
-                    <div className="deep-search-container">
-                        <button className="deep-search-button" onClick={() => vscode.postMessage({ command: 'deepSearch' })}>
-                            <span className="codicon codicon-search"></span>
-                            Deep Search
-                        </button>
+                
+                {mode === 'project' && enableDeepSearch && showDetails && (
+                    <div className="search-details">
+                        <div className="scope-control">
+                            <span className="label">Scope:</span>
+                            <span className="scope-path" title={scopePath || 'Workspace Root'}>
+                                {scopePath ? scopePath.split(/[\\/]/).pop() : 'Workspace Root'}
+                            </span>
+                            <span 
+                                className="codicon codicon-folder-opened action-icon" 
+                                title="Select Folder"
+                                onClick={() => vscode.postMessage({ command: 'selectScope' })}
+                            ></span>
+                            {scopePath && (
+                                <span 
+                                    className="codicon codicon-clear-all action-icon" 
+                                    title="Clear Scope"
+                                    onClick={() => vscode.postMessage({ command: 'clearScope' })}
+                                ></span>
+                            )}
+                        </div>
+                        <div className="include-pattern-container">
+                            <span className="label">files to include</span>
+                            <VSCodeTextField 
+                                placeholder="e.g. *.ts, src/**/include"
+                                value={includePattern}
+                                onInput={handleIncludePatternChange}
+                                onKeyDown={handleIncludePatternKeyDown}
+                                className="include-pattern-input"
+                            >
+                                <span slot="start" className="codicon codicon-files"></span>
+                            </VSCodeTextField>
+                        </div>
                     </div>
                 )}
             </div>
@@ -277,7 +350,7 @@ const App: React.FC = () => {
                     onJump={handleJump}
                     onSelect={handleSelect}
                     selectedSymbol={selectedSymbol}
-                    defaultExpanded={!!query}
+                    defaultExpanded={mode === 'current' ? !!query : false}
                     forceDeepSearch={forceDeepSearch}
                 />
             </div>

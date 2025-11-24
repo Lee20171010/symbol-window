@@ -53,7 +53,7 @@
     - Perform the same search multiple times.
     - Verify the results are identical each time.
 
-## 4. Project Symbol Window (Mode: Project)
+## 4. Project Symbol Window (Mode: Project - Normal Search)
 - [ ] **Default State**
     - Switch to Project Mode.
     - Verify the list is initially empty (or shows a prompt to search).
@@ -64,16 +64,45 @@
 - [ ] **Consistency**
     - Perform the same search multiple times.
     - Verify the results are identical each time.
+- [ ] **Instant Search (Cache Verification)**
+    - Type a query (e.g., "Controller") in Project Mode. Note the time it takes to appear (e.g., ~1 second).
+    - Clear the search bar.
+    - Type "Controller" again immediately.
+    - Verify the results appear **instantly** (perceptibly faster than the first time), indicating efficient reuse of data.
 
 ## 5. Deep Search (Experimental)
 - [ ] **Enable Deep Search**
     - Set `symbolWindow.enableDeepSearch` to `true`.
     - Switch to Project Mode.
-    - Verify the "Deep Search" button appears below the search bar (after a search).
+    - Verify the "Toggle Search Details" (kebab menu) button appears in the search bar.
 - [ ] **Disable Deep Search**
     - Set `symbolWindow.enableDeepSearch` to `false`.
     - Switch to Project Mode.
-    - Verify the "Deep Search" button is **hidden**.
+    - Verify the "Toggle Search Details" button is **hidden**.
+- [ ] **Search Details Panel**
+    - Enable Deep Search and open Project Mode.
+    - Click the "Toggle Search Details" button.
+    - Verify the panel expands showing "Scope" and "files to include".
+    - Click again to collapse.
+- [ ] **Search Scope**
+    - Open Search Details.
+    - Click the folder icon to select a sub-folder in the workspace.
+    - Perform a search.
+    - Verify results are limited to that folder.
+    - Click the "Clear Scope" icon.
+    - Verify scope resets to "Workspace Root".
+- [ ] **Files to Include**
+    - Open Search Details.
+    - Enter a glob pattern (e.g., `*.ts`).
+    - Perform a search.
+    - Verify results only include `.ts` files.
+    - Press `Esc` while focused on the input.
+    - Verify the input is cleared.
+- [ ] **State Persistence**
+    - Set a Scope and Include Pattern.
+    - Reload the window.
+    - Verify Scope and Include Pattern are preserved.
+    - Verify the Details panel open/closed state is preserved.
 - [ ] **Force Deep Search**
     - Set `symbolWindow.enableDeepSearch` to `true`.
     - Set `symbolWindow.forceDeepSearch` to `true`.
@@ -86,15 +115,16 @@
     - Trigger a long-running Deep Search (e.g., common keyword in large repo).
     - Click the "Cancel" button.
     - Verify the search stops and the loading indicator disappears.
-- [ ] **Triggering (Manual Mode)**
+- [ ] **Results (Manual Mode)**
     - Set `symbolWindow.forceDeepSearch` to `false`.
     - Enter a common keyword (e.g., "User") that likely exceeds the LSP limit (100 results).
     - Verify the "Deep Search" button is visible.
-    - Click "Deep Search".
-- [ ] **Results (Manual Mode)**
+    - Click "Deep Search" (if applicable).
     - Verify the UI shows a "Searching..." state.
     - Verify new results appear at the top of the list.
+- [ ] **Results Display**
     - Verify Deep Search results have a distinct background highlight (to distinguish from standard results).
+    - Verify Deep Search results are collapsed by default.
     - Verify hovering over a Deep Search result shows a tooltip "Result from Deep Search".
     - Verify results are relevant (contain the keyword).
 - [ ] **Deduplication**
@@ -146,18 +176,11 @@
     - Switch to **Current Document Mode**.
     - Verify the list **immediately** populates with symbols for the active file, ignoring the Project Mode error/loading state.
 
-## 8. Performance & User Experience
-- [ ] **Instant Search (Cache Verification)**
-    - Type a query (e.g., "Controller") in Project Mode. Note the time it takes to appear (e.g., ~1 second).
-    - Clear the search bar.
-    - Type "Controller" again immediately.
-    - Verify the results appear **instantly** (perceptibly faster than the first time), indicating efficient reuse of data.
+## 8. Additional Considerations (Edge Cases)
 - [ ] **Manual Refresh**
     - Perform a search and see results.
     - Click the **Refresh Button**.
     - Verify the view briefly flashes or shows a loading state, indicating that a fresh search is being performed against the workspace.
-
-## 9. Additional Considerations (Edge Cases)
 - [ ] **Pagination / Infinite Scroll** (Project Mode)
     - Search for a common term (e.g., `e`) that returns > 100 results.
     - Scroll to the bottom of the list.
@@ -169,7 +192,7 @@
     - Reload the window (`Developer: Reload Window`) with the view open.
     - Verify the extension activates and restores the previous mode/state correctly.
 
-## 10. Configuration & Display
+## 9. Configuration & Display
 - [ ] **Clean C-Style Types** (`symbolWindow.cleanCStyleTypes`)
     - **Enabled (Default)**:
         - Create/Open a C/C++ file with a struct typedef: `typedef struct MyStruct { ... } MyStruct;`

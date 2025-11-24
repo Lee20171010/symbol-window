@@ -78,6 +78,11 @@
         "command": "symbol-window.deepSearch",
         "title": "Deep Search",
         "icon": "$(search-fuzzy)"
+      },
+      {
+        "command": "symbol-window.deepSearchDisabled",
+        "title": "Deep Search (Disabled - Enable in Settings)",
+        "icon": "$(search-fuzzy)"
       }
     ],
     "menus": {
@@ -94,7 +99,12 @@
         },
         {
           "command": "symbol-window.deepSearch",
-          "when": "view == symbol-window-view",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch",
+          "group": "navigation"
+        },
+        {
+          "command": "symbol-window.deepSearchDisabled",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && !config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch",
           "group": "navigation"
         }
       ]
