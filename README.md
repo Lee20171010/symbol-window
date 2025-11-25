@@ -21,14 +21,22 @@ A Visual Studio Code extension that provides a "Source Insight"-like symbol navi
         - **Files to Include**: Filter results using glob patterns (e.g., `src/**/*.ts`).
     - **Optimized Matching**: Uses regex permutations for fast multi-keyword matching.
 
-### 3. Native Experience
+### 3. Database Mode (New!)
+For large workspaces where standard LSP search is slow or incomplete, Symbol Window now offers a high-performance **Database Mode**.
+- **SQLite Backend**: Indexes workspace symbols into a local SQLite database for instant search results.
+- **Persistent Index**: The index persists across sessions, so you don't have to wait for re-indexing every time you open VS Code.
+- **Incremental Updates**: Automatically detects file changes and updates the index in the background.
+- **Hybrid Search**: Combines the speed of database lookups with the accuracy of LSP symbol parsing.
+- **Visual Indicator**: The UI clearly labels this mode as **PROJECT WORKSPACE (DATABASE)**.
+
+### 4. Native Experience
 - **UI**: Built with `@vscode/webview-ui-toolkit` to match VS Code's native design.
 - **Icons**: Uses standard VS Code Codicons.
 - **Theme Aware**: Automatically adapts to Light, Dark, and High Contrast themes.
 
 ## Configuration
 
-You can customize the appearance of the symbol list via VS Code settings:
+You can customize the appearance and behavior of the symbol list via VS Code settings:
 
 - **`symbolWindow.cleanCStyleTypes`** (Default: `true`):  
   Moves C-style type suffixes (e.g., `(typedef)`, `(struct)`) from the symbol name to the detail view (gray text).
@@ -41,6 +49,9 @@ You can customize the appearance of the symbol list via VS Code settings:
 
 - **`symbolWindow.forceDeepSearch`** (Default: `false`):  
   If enabled (and `enableDeepSearch` is true), the extension will *always* use Deep Search for every query in Project Mode, skipping the standard LSP search. This is useful for very large codebases where LSP search is consistently incomplete.
+
+- **`symbolWindow.enableDatabaseMode`** (Default: `true`):  
+  Enables the high-performance SQLite-based indexing mode. Recommended for large projects.
 
 ## Usage
 
@@ -64,6 +75,10 @@ Click the "Refresh" icon to reload symbols or clear the search cache.
     - **Scope**: Click the folder icon to select a specific root directory for your search.
     - **Files to Include**: Enter glob patterns (e.g., `*.ts`, `src/**`) to filter the files being searched.
     - **Deep Search**: If standard LSP search is insufficient, the extension automatically leverages `ripgrep` with optimized regex permutations to find symbols across your defined scope.
+6.  **Database Mode**:
+    - Enable `symbolWindow.enableDatabaseMode` in settings.
+    - The view title will change to **PROJECT WORKSPACE (DATABASE)**.
+    - The first time you enable it, the extension will index your workspace. Subsequent searches will be instant.
 
 
 ## Requirements
@@ -80,15 +95,15 @@ This extension is built on top of VS Code's native Symbol APIs (`vscode.executeD
 **Enhancements:**
 - **Multi-Keyword Search**: Unlike standard VS Code search which often requires exact order, Symbol Window supports space-separated keywords (e.g., `User Controller`) and performs a client-side intersection. This allows for order-independent matching and more precise filtering.
 - **Structure Visualization**: Provides a persistent tree view for the current document, unlike the transient "Go to Symbol" quick pick.
+- **Database Mode**: Solves the "incomplete results" problem of standard LSP by maintaining a full index of workspace symbols.
 
 **Limitations:**
-- **Search Results**: The completeness of the *initial* search results depends on the language extension. If the LSP truncates results (e.g., returns only the first 100 matches for "User"), our enhanced filtering can only operate on that subset.
+- **Search Results (Standard Mode)**: The completeness of the *initial* search results depends on the language extension. If the LSP truncates results (e.g., returns only the first 100 matches for "User"), our enhanced filtering can only operate on that subset. **Use Database Mode to overcome this.**
 - **Indexing Speed**: The "Readiness" of the symbol window depends on how fast your language extension can index the workspace.
 
 ## Future Work
 
-1.  **Enhanced Search Capabilities**: Implement advanced search strategies (e.g., hybrid text search) to overcome LSP result truncation limits in large projects.
-2.  **Relation Window**: A planned feature to visualize call hierarchies and symbol relationships (Callers/Callees) directly within the side panel.
+1.  **Relation Window**: A planned feature to visualize call hierarchies and symbol relationships (Callers/Callees) directly within the side panel.
 
 ## Known Issues
 

@@ -130,15 +130,30 @@
 - [ ] **Deduplication**
     - Ensure symbols already found by the standard search are not duplicated in the Deep Search results.
 
-## 6. Search Bar Robustness
-- [ ] **Special Characters**
-    - Search for symbols with characters like `::`, `->`, `.`, `_`, `~`.
-    - Verify the application does not crash.
-    - Verify correct matching (e.g., `std::vector` matches `vector` inside `std`).
-- [ ] **Race Conditions (Fast Typing)**
-    - Type a long query quickly, then immediately clear it.
-    - Verify the result list ends up empty (not showing results for the intermediate query).
-    - Type "abc", wait slightly, then type "d". Verify results are for "abcd".
+## 6. Database Mode
+- [ ] **Enable Database Mode**
+    - Set `symbolWindow.enableDatabaseMode` to `true` in settings.
+    - Verify the view title changes to **PROJECT WORKSPACE (DATABASE)**.
+- [ ] **Initial Indexing**
+    - Enable Database Mode for the first time in a workspace.
+    - Verify a progress indicator or status message shows indexing is in progress.
+    - Verify symbols become searchable after indexing completes.
+- [ ] **Persistence**
+    - Index the workspace.
+    - Reload the window (`Developer: Reload Window`).
+    - Perform a search immediately.
+    - Verify results are returned instantly without re-indexing.
+- [ ] **Incremental Updates**
+    - Create a new file `test_symbol.ts` with a unique class `class TestUniqueSymbol {}`.
+    - Save the file.
+    - Search for `TestUniqueSymbol`.
+    - Verify the new symbol appears in the results.
+    - Delete the file.
+    - Search for `TestUniqueSymbol`.
+    - Verify the symbol is removed from the results.
+- [ ] **Git Integration (Ignored Files)**
+    - Create a file inside `node_modules` or a folder listed in `.gitignore`.
+    - Verify symbols from this file are **not** indexed or searchable.
 
 ## 7. State Management & Synchronization
 - [ ] **File Updates (Data Freshness)**

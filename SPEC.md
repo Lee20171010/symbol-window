@@ -132,13 +132,21 @@
     - `SymbolItem`: Renders individual rows (Icon + Name + Detail).
 4.  **SymbolController (Backend):** Handles business logic, message passing, caching, and readiness checks.
 5.  **SymbolModel:** Wraps VS Code APIs (`executeDocumentSymbolProvider`, `executeWorkspaceSymbolProvider`).
+6.  **Database Module (`src/db`):** Manages the SQLite connection and schema.
+7.  **Indexer Module (`src/indexer`):** Handles workspace crawling, symbol extraction, and incremental updates.
 
 ### 5.2 Project Structure
 ```
 src/
 ├── extension.ts           // Entry point
 ├── controller/
-│   └── symbolController.ts // Backend Logic: Message passing, Caching, Readiness
+│   └── symbolController.ts // Backend Logic
+├── db/                    // Database Layer
+│   ├── database.ts        // SQLite connection
+│   └── schema.ts          // Table definitions
+├── indexer/               // Indexing Layer
+│   ├── indexer.ts         // Main indexing logic
+│   └── crawler.ts         // File system traversal
 ├── webview/               // Frontend (React)
 │   ├── index.tsx          // React Entry
 │   ├── App.tsx
@@ -224,7 +232,7 @@ Replace the current `executeWorkspaceSymbolProvider` + `ripgrep` hybrid approach
             -   **Chunking:** Split the symbols into smaller batches (e.g., 100 symbols per INSERT) to avoid SQLite's parameter limit (SQLITE_MAX_VARIABLE_NUMBER). This prevents "too many terms in compound SELECT" errors for large files.
     -   **Incremental Updates:**
         -   **Watcher:** Use `vscode.workspace.createFileSystemWatcher` to detect external changes (e.g., `git pull`).
-            -   *Optimization:* **Strictly Scope** the watcher using a glob pattern (e.g., excluding `node_modules`, `.git`) to prevent resource spikes during operations like `npm install`.
+            -   *Optimization:* Since VS Code's watcher API does not support complex exclude patterns (like `node_modules`), we use a global watcher (`**/*`) combined with a **Fast Path Filter** (`shouldIgnore`) that checks against `.gitignore` rules in memory to quickly discard irrelevant events.
         -   **Events:**
             -   `onDidChange` / `onDidCreate`: Add file to indexing queue.
             -   `onDidDelete`: Remove from DB immediately.
@@ -305,12 +313,12 @@ The database schema is normalized to reduce storage size and improve query perfo
     -   *Challenge:* Indexing thousands of files takes time.
     -   *Solution:* **Hybrid Transition Strategy**.
         -   While indexing is in progress, the extension continues to use the existing "LSP + Deep Search" mechanism.
-        -   Once indexing is complete, the UI seamlessly switches to "Database Mode", and the "Deep Search" controls (kebab menu) are hidden.
+        -   Once indexing is complete, the UI seamlessly switches to "Database Mode" (labeled as **PROJECT WORKSPACE (DATABASE)**), and the "Deep Search" controls (kebab menu) are hidden.
         -   Show a non-intrusive progress indicator (Status Bar) during indexing.
 2.  **LSP Bottleneck:**
     -   *Challenge:* Flooding the LSP with `getDocumentSymbol` requests can cause high CPU usage or crashes.
     -   *Solution:* **Smart Scheduler**.
-        -   **Batching:** Process files in small batches (e.g., 5 files) with delays between batches.
+        -   **Batching:** Process files in small batches (e.g., 20 files) with delays between batches.
         -   **User Preemption:** If the user triggers a search or interacts with the editor, pause the background indexing to prevent UI lag.
 3.  **File Filtering:**
     -   *Challenge:* Indexing irrelevant files (minified JS, logs, node_modules) wastes resources.

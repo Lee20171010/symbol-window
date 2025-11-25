@@ -4,6 +4,20 @@ All notable changes to the "symbol-window" extension will be documented in this 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.0] - 2025-11-26
+
+### Added
+- **Database Mode**: A new high-performance mode backed by SQLite for instant symbol search in large workspaces.
+    - **Persistent Index**: Symbols are indexed once and persisted to disk, eliminating wait times on startup.
+    - **Incremental Updates**: The index is automatically updated in the background as you edit files.
+    -   **Hybrid Search**: Combines database speed with LSP accuracy.
+- **Configuration**: Added `symbolWindow.enableDatabaseMode` to enable the new mode.
+- **UI**: Added a distinct **PROJECT WORKSPACE (DATABASE)** label when Database Mode is active.
+
+### Changed
+- **Performance**: Significantly reduced memory usage and improved search responsiveness in large projects when using Database Mode.
+- **Documentation**: Updated README and SPEC to reflect the new architecture.
+
 ## [0.0.4] - 2025-11-25
 
 ### Changed
