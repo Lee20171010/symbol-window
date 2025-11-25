@@ -178,3 +178,151 @@ The `SymbolController` maintains a state machine to handle the availability of t
 - **Sync Selection:** Implement logic to highlight the symbol in the tree when the cursor moves in the editor.
 - **Sorting:** Add toggle to sort symbols by Name vs. Position.
 - **Context Window Integration:** Explore integration with "Context Window" extensions.
+
+## 7. Architecture Discussion (Database Mode)
+
+### 7.1 Proposal
+Replace the current `executeWorkspaceSymbolProvider` + `ripgrep` hybrid approach with a **Full Indexing** strategy using a local SQLite database. This mode is referred to as **Database Mode**.
+
+### 7.2 Core Logic
+1.  **Configuration:**
+    -   `symbolWindow.enableDatabaseMode`: Master switch (Default: `true`).
+    -   **If True:**
+        -   Start indexing in the background.
+        -   Use "Hybrid Transition Strategy": Use LSP + Deep Search (if enabled) until indexing is complete, then switch to Database Mode.
+    -   **If False:**
+        -   Do not start indexing.
+        -   Permanently use LSP + Deep Search (if enabled).
+2.  **Data Source:** `vscode.executeDocumentSymbolProvider` (for every file).
+3.  **Storage:** `node:sqlite` (Built-in Node.js module).
+    -   **Feature Detection:** On extension activation, attempt to dynamically import `node:sqlite`.
+    -   **Fallback:** If the import fails (e.g., older VS Code versions), **completely disable** the Indexing feature and revert to the standard "Project Mode" (LSP + Deep Search).
+    -   **Versioning:** Store a schema version (e.g., `PRAGMA user_version`). On startup, check if the DB version matches the extension's expected version. If mismatch, **drop and rebuild** the entire database to ensure schema compatibility.
+    -   **Self-Healing:** Wrap database operations in try-catch blocks. If a critical error (e.g., `SQLITE_CORRUPT`) is detected, automatically delete the database file and trigger a full rebuild.
+    -   **Optimization:** Enable WAL mode (`PRAGMA journal_mode = WAL;`) and `PRAGMA synchronous = NORMAL;` for better concurrency.
+    -   **Lifecycle:** Explicitly close the database connection (`db.close()`) in the extension's `deactivate` method to ensure WAL files are merged and resources are released.
+4.  **Indexing Strategy:**
+    -   **LSP Dependency:** The indexer **MUST** wait for the `SymbolController` to report `ready` state before processing the queue. If the LSP becomes unavailable, indexing pauses.
+    -   **Initial Scan (Cold Start):**
+        -   Iterate over all workspace folders (`vscode.workspace.workspaceFolders`).
+        -   Run `rg --files` for each folder to build the initial file list.
+    -   **Startup Sync (Warm Start):**
+        -   Load the list of indexed files from SQLite.
+        -   Compare with the current workspace state (using `rg --files` per folder).
+        -   **Deleted Files:** Remove from DB.
+        -   **New Files:** Add to the indexing queue.
+        -   **Modified Files:** Check `mtime` (modification time). If changed, add to the indexing queue.
+    -   **Queue System:**
+        -   Process files in small batches to avoid blocking the UI.
+        -   **Deduplication:** Use a `Set` or `Map` to track pending files. If a file is already in the queue, update its status but do not add a duplicate entry.
+        -   **Fault Isolation:** Wrap individual file processing in try-catch blocks. If parsing or indexing fails for a specific file, log the error and **continue** to the next file in the queue.
+    -   **Persistence:** Store the index in `workspaceStorage` (`context.storageUri`) which is managed by VS Code per workspace.
+    -   **Tree Flattening & Bulk Insert:**
+        -   **Strategy:** Perform a Depth-First Search (DFS) traversal to collect all symbols in memory first.
+        -   **Container Name:** Pass the **accumulated ancestor path** (e.g., "Namespace.Class") down during DFS. This allows searching for a method using its namespace or any ancestor name (e.g., "Namespace Method").
+        -   **Bulk Insert:** Once all symbols for a file are collected, insert them into the database using a **single transaction**.
+            -   **Chunking:** Split the symbols into smaller batches (e.g., 100 symbols per INSERT) to avoid SQLite's parameter limit (SQLITE_MAX_VARIABLE_NUMBER). This prevents "too many terms in compound SELECT" errors for large files.
+    -   **Incremental Updates:**
+        -   **Watcher:** Use `vscode.workspace.createFileSystemWatcher` to detect external changes (e.g., `git pull`).
+            -   *Optimization:* **Strictly Scope** the watcher using a glob pattern (e.g., excluding `node_modules`, `.git`) to prevent resource spikes during operations like `npm install`.
+        -   **Events:**
+            -   `onDidChange` / `onDidCreate`: Add file to indexing queue.
+            -   `onDidDelete`: Remove from DB immediately.
+        -   **Transactions:** Use SQLite transactions (`BEGIN`...`COMMIT`) when updating a file. This ensures that "Delete old symbols", "Insert new symbols", and "Update file metadata (mtime)" happen atomically.
+5.  **Querying:**
+    -   **Performance:** Since `node:sqlite` is synchronous, queries **MUST** use `LIMIT` and `OFFSET` (e.g., `LIMIT 100`) to prevent blocking the Extension Host when the result set is large.
+        -   **Pagination State:** The frontend (React) maintains the current page index. When the user scrolls to the bottom (Infinite Scroll), it sends a new search request with an incremented `OFFSET` (e.g., `OFFSET 100`, `OFFSET 200`).
+    -   **Multi-keyword Logic:**
+        -   **Debounce:** Apply the same 300ms debounce as standard search to prevent excessive synchronous queries during rapid typing.
+        -   **Case Insensitivity:** SQL `LIKE` queries should be case-insensitive (default behavior for ASCII in SQLite, but explicit `COLLATE NOCASE` can be used if needed).
+        -   **Strategy:** Split the search query by spaces into tokens (e.g., "User Controller" -> `["User", "Controller"]`).
+        -   **Sanitization:** Escape SQL wildcards (`%`, `_`) and backslashes in user input to prevent injection or incorrect matching (e.g., searching for "100%" should not match "1000"). Use `ESCAPE '\'` in the SQL query.
+        -   **SQL Construction:** Use `AND` operators to ensure the result matches **ALL** tokens.
+        -   **Scope:** Search across both `name` and `container_name` columns. This allows finding a method by combining its class name and method name (e.g., "MyClass init").
+        -   **Example SQL:**
+            ```sql
+            SELECT * FROM symbols 
+            WHERE (name LIKE '%User%' OR container_name LIKE '%User%') 
+            AND (name LIKE '%Controller%' OR container_name LIKE '%Controller%')
+            ORDER BY name ASC, path ASC
+            LIMIT 100 OFFSET ?
+            ```
+    -   **Precise Matching:** Use SQL `LIKE` with `%` wildcards (e.g., `%keyword%`) for substring matching.
+    -   **No Fuzzy Matching:** We explicitly avoid fuzzy subsequence matching (e.g., "SC" finding "SymbolController") to ensure high precision.
+    -   **Frontend Highlighting:** The Webview is responsible for highlighting the matching keywords in the result list.
+        -   *Performance:* Since results are paginated (100 items), simple substring highlighting is performant and does not cause rendering lag.
+        -   *Consistency:* Frontend highlighting logic must match the backend's `AND` logic (highlight all occurrences of all keywords).
+6.  **Manual Re-index:**
+    -   Provide a command `symbol-window.rebuildIndex`.
+    -   Add a "Rebuild Index" icon to the Symbol Window toolbar (visible only when in Database Mode). This replaces the "Deep Search" icon which is hidden in Database Mode.
+
+### 7.3 Database Schema (Draft)
+The database schema is normalized to reduce storage size and improve query performance.
+
+**Table: `files`** (Stores file metadata)
+- `id`: INTEGER PRIMARY KEY AUTOINCREMENT
+    - *Purpose:* Unique identifier for the file, used as a foreign key in the `symbols` table.
+- `path`: TEXT UNIQUE
+    - *Purpose:* The absolute file path.
+    - *Normalization:* Paths must be normalized (e.g., using `vscode.Uri.file(path).fsPath`) before storage to handle Windows drive letter inconsistencies (e.g., `c:` vs `C:`).
+- `mtime`: INTEGER
+    - *Purpose:* Last modification timestamp. Used to detect if a file has changed since the last index.
+- `indexed_at`: INTEGER
+    - *Purpose:* Timestamp of when the file was last successfully indexed.
+
+**Table: `symbols`** (Stores symbol data)
+- `id`: INTEGER PRIMARY KEY AUTOINCREMENT
+    - *Purpose:* Unique identifier for the symbol.
+- `file_id`: INTEGER
+    - *Purpose:* Foreign Key referencing `files.id`. Links the symbol to its source file.
+    - *Constraint:* `ON DELETE CASCADE` (Automatically delete symbols when the file is deleted).
+- `name`: TEXT
+    - *Purpose:* The name of the symbol (e.g., "MyClass", "init").
+- `detail`: TEXT
+    - *Purpose:* Additional details (e.g., function signature "(int a, int b)", class inheritance).
+- `kind`: INTEGER
+    - *Purpose:* The `vscode.SymbolKind` enum value (e.g., 5 for Method, 11 for Function). Used to render the correct icon.
+- `range_start_line`: INTEGER
+- `range_start_char`: INTEGER
+- `range_end_line`: INTEGER
+- `range_end_char`: INTEGER
+    - *Purpose:* The full range of the symbol (including body). Used for highlighting.
+- `selection_range_start_line`: INTEGER
+- `selection_range_start_char`: INTEGER
+- `selection_range_end_line`: INTEGER
+- `selection_range_end_char`: INTEGER
+    - *Purpose:* The range of the symbol's name (identifier). Used for "Jump to Definition" to position the cursor exactly on the name.
+- `container_name`: TEXT
+    - *Purpose:* The name of the parent symbol (e.g., class name for a method). Used to reconstruct the hierarchy or display context in flat lists.
+
+### 7.4 Benefits
+-   **Precision:** Eliminates fuzzy/regex matching errors.
+-   **Completeness:** Bypasses the 100-result limit of standard LSP calls.
+-   **Performance:** SQL queries are extremely fast once indexed.
+
+### 7.5 Challenges & Solutions
+1.  **Initialization Time (The 'Cold Start' Problem):**
+    -   *Challenge:* Indexing thousands of files takes time.
+    -   *Solution:* **Hybrid Transition Strategy**.
+        -   While indexing is in progress, the extension continues to use the existing "LSP + Deep Search" mechanism.
+        -   Once indexing is complete, the UI seamlessly switches to "Database Mode", and the "Deep Search" controls (kebab menu) are hidden.
+        -   Show a non-intrusive progress indicator (Status Bar) during indexing.
+2.  **LSP Bottleneck:**
+    -   *Challenge:* Flooding the LSP with `getDocumentSymbol` requests can cause high CPU usage or crashes.
+    -   *Solution:* **Smart Scheduler**.
+        -   **Batching:** Process files in small batches (e.g., 5 files) with delays between batches.
+        -   **User Preemption:** If the user triggers a search or interacts with the editor, pause the background indexing to prevent UI lag.
+3.  **File Filtering:**
+    -   *Challenge:* Indexing irrelevant files (minified JS, logs, node_modules) wastes resources.
+    -   *Solution:* **Leverage Ripgrep**.
+        -   Use `rg --files` to discover files for indexing. This automatically respects `.gitignore` and handles binary/large file exclusion, reusing the robust logic already present in the Deep Search implementation.
+        -   Explicitly exclude `node_modules` unless configured otherwise.
+4.  **Path Consistency (Windows):**
+    -   *Challenge:* Windows file paths are case-insensitive but inconsistent (e.g., `c:\Project` vs `C:\Project`). `ripgrep` and VS Code APIs may return different casing, leading to duplicate indexing or lookup failures.
+    -   *Solution:* **Canonicalization**. Always normalize paths (e.g., `vscode.Uri.file(path).fsPath`) before storing in the database or querying.
+
+### 7.6 Next Steps
+1.  **POC:** Verify `node:sqlite` availability and performance in the VS Code environment.
+2.  **Schema Design:** Define the SQLite table structure for symbols.
+3.  **Indexer Implementation:** Build the queue-based indexing logic.
+
