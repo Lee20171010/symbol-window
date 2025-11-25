@@ -23,6 +23,8 @@ const App: React.FC = () => {
     const [scopePath, setScopePath] = useState<string | undefined>(undefined);
     const [includePattern, setIncludePattern] = useState(savedState.includePattern || '');
     const [showDetails, setShowDetails] = useState(savedState.showDetails || false);
+    const [indexingProgress, setIndexingProgress] = useState<number | null>(null);
+    const [isDatabaseMode, setIsDatabaseMode] = useState(false);
 
     // Refs for accessing state in event listener
     const modeRef = useRef(mode);
@@ -87,6 +89,18 @@ const App: React.FC = () => {
                     break;
                 case 'setScope':
                     setScopePath(message.scopePath);
+                    break;
+                case 'progress':
+                    // @ts-ignore
+                    setIndexingProgress(message.percent);
+                    // @ts-ignore
+                    if (message.percent >= 100) {
+                        setIndexingProgress(null);
+                    }
+                    break;
+                case 'setDatabaseMode':
+                    // @ts-ignore
+                    setIsDatabaseMode(message.enabled);
                     break;
             }
         };
@@ -263,10 +277,22 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className={`container mode-${mode}`}>
+        <div className={`container mode-${mode} ${indexingProgress !== null ? 'has-progress' : ''}`}>
+            {indexingProgress !== null && (
+                <div className="indexing-progress-container">
+                    <div className="indexing-label">
+                        <span className="codicon codicon-sync codicon-modifier-spin"></span>
+                        <span>Indexing Symbols... {indexingProgress}%</span>
+                    </div>
+                    <div className="indexing-progress">
+                        {/* eslint-disable-next-line react/forbid-dom-props */}
+                        <div className="indexing-progress-bar" style={{ width: `${indexingProgress}%` }} />
+                    </div>
+                </div>
+            )}
             <div className="search-container">
                 <div className="mode-indicator">
-                    {mode === 'current' ? 'Current Document' : 'Project Workspace'}
+                    {mode === 'current' ? 'Current Document' : (isDatabaseMode ? 'Project Workspace (Database)' : 'Project Workspace')}
                 </div>
                 {backendStatus === 'loading' && (
                     <div className="status-warning">
@@ -295,7 +321,7 @@ const App: React.FC = () => {
                     disabled={backendStatus === 'loading' || backendStatus === 'timeout'}
                 >
                     <span slot="start" className="codicon codicon-search"></span>
-                    {mode === 'project' && enableDeepSearch && (
+                    {mode === 'project' && enableDeepSearch && !isDatabaseMode && (
                         <span 
                             slot="end" 
                             className={`codicon codicon-kebab-vertical ${showDetails ? 'active' : ''}`}
@@ -305,7 +331,7 @@ const App: React.FC = () => {
                     )}
                 </VSCodeTextField>
                 
-                {mode === 'project' && enableDeepSearch && showDetails && (
+                {mode === 'project' && enableDeepSearch && !isDatabaseMode && showDetails && (
                     <div className="search-details">
                         <div className="scope-control">
                             <span className="label">Scope:</span>

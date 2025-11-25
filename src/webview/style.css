@@ -12,6 +12,13 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    position: relative;
+    padding-top: 0;
+    transition: padding-top 0.2s ease;
+}
+
+.container.has-progress {
+    padding-top: 28px; /* Height of indexing-progress-container */
 }
 
 .search-container {
@@ -214,4 +221,36 @@ body {
     font-size: 0.85em;
     margin-bottom: 4px;
     opacity: 0.8;
+}
+
+.indexing-progress-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 100;
+    background-color: var(--vscode-editor-background);
+    border-bottom: 1px solid var(--vscode-widget-border);
+    padding-bottom: 2px;
+}
+
+.indexing-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.indexing-progress {
+    height: 2px;
+    width: 100%;
+    background-color: var(--vscode-scrollbarSlider-background);
+}
+
+.indexing-progress-bar {
+    height: 100%;
+    background-color: var(--vscode-progressBar-background);
+    transition: width 0.2s ease;
 }

@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
-import { SymbolModel } from '../model/symbolModel';
+import { SymbolModel, parseCStyleType, parseSignature } from '../model/symbolModel';
 import { SymbolWebviewProvider } from '../view/SymbolWebviewProvider';
 import { SymbolMode, SymbolItem } from '../shared/types';
+import { SymbolDatabase } from '../db/database';
+import { SymbolIndexer } from '../indexer/indexer';
 
 export class SymbolController {
     private model: SymbolModel;
@@ -31,8 +33,13 @@ export class SymbolController {
     private readonly MAX_RETRIES = 20; // 20 * 3s = 60s
     private probeIndex: number = 0;
     private readonly PROBE_CHARS = ['', 'e', 'a', 'i', 'o', 'u', 's', 't', 'r', 'n']; // Common letters
+    private isDatabaseReady = false;
 
-    constructor(context: vscode.ExtensionContext) {
+    constructor(
+        context: vscode.ExtensionContext,
+        private db?: SymbolDatabase,
+        private indexer?: SymbolIndexer
+    ) {
         this.context = context;
         this.model = new SymbolModel();
         
@@ -92,6 +99,19 @@ export class SymbolController {
 
     public setProvider(provider: SymbolWebviewProvider) {
         this.provider = provider;
+    }
+
+    public setDatabaseReady(ready: boolean) {
+        if (this.isDatabaseReady === ready) { return; }
+
+        if (ready) {
+            console.log('[SymbolWindow] Indexing complete. Switching to Database Mode.');
+        }
+
+        this.isDatabaseReady = ready;
+        vscode.commands.executeCommand('setContext', 'symbolWindow.databaseReady', ready);
+        // Notify webview to update UI (hide deep search, show rebuild)
+        this.provider?.postMessage({ command: 'setDatabaseMode', enabled: ready });
     }
 
     public async refresh() {
@@ -177,6 +197,11 @@ export class SymbolController {
         this.retryCount = 0;
         this.provider?.postMessage({ command: 'status', status: 'loading' });
         
+        // Pause Indexer while polling
+        if (this.indexer) {
+            this.indexer.pause();
+        }
+
         this.poll();
     }
 
@@ -211,6 +236,11 @@ export class SymbolController {
                 this.readiness = 'ready';
                 this.provider?.postMessage({ command: 'status', status: 'ready' });
                 
+                // Notify Indexer
+                if (this.indexer) {
+                    this.indexer.resume();
+                }
+
                 // Trigger refresh to update UI (Current: re-fetch symbols, Project: re-run search)
                 this.refresh();
                 return; // Stop recursion
@@ -219,6 +249,7 @@ export class SymbolController {
                 this.retryCount++;
                 if (this.retryCount > this.MAX_RETRIES) {
                     this.readiness = 'standby'; // Back to standby (timeout)
+                    if (this.indexer) { this.indexer.pause(); } // Ensure paused
                     if (this.currentMode === 'project') {
                         this.provider?.postMessage({ command: 'status', status: 'timeout' });
                     }
@@ -233,6 +264,7 @@ export class SymbolController {
             this.retryCount++;
             if (this.retryCount > this.MAX_RETRIES) {
                 this.readiness = 'standby'; // Back to standby (timeout)
+                if (this.indexer) { this.indexer.pause(); } // Ensure paused
                 if (this.currentMode === 'project') {
                     this.provider?.postMessage({ command: 'status', status: 'timeout' });
                 }
@@ -275,6 +307,39 @@ export class SymbolController {
             
             const searchId = ++this.currentSearchId;
             const config = vscode.workspace.getConfiguration('symbolWindow');
+            const enableDatabaseMode = config.get<boolean>('enableDatabaseMode', false);
+
+            // Hybrid Transition: Use DB only if indexing is complete (isDatabaseReady)
+            if (enableDatabaseMode && this.db && this.isDatabaseReady) {
+                this.debounceTimer = setTimeout(async () => {
+                    if (searchId !== this.currentSearchId) { return; }
+                    
+                    this.currentQuery = query;
+                    this.provider?.postMessage({ command: 'searchStart' });
+                    
+                    if (!query) {
+                        this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
+                        return;
+                    }
+
+                    try {
+                        const records = this.db!.search(query, this.BATCH_SIZE, 0);
+                        const items = records.map(r => this.mapRecordToItem(r));
+                        
+                        this.allSearchResults = items;
+                        this.loadedCount = items.length;
+                        
+                        this.provider?.postMessage({ 
+                            command: 'updateSymbols', 
+                            symbols: items
+                        });
+                    } catch (e) {
+                        console.error('DB Search failed:', e);
+                    }
+                }, 300);
+                return;
+            }
+
             const enableDeepSearch = config.get<boolean>('enableDeepSearch', false);
             const forceDeepSearch = enableDeepSearch && config.get<boolean>('forceDeepSearch', false);
             const debounceTime = forceDeepSearch ? 800 : 300;
@@ -438,14 +503,31 @@ export class SymbolController {
     }
 
     public loadMore() {
-        if (this.currentMode === 'project' && this.loadedCount < this.allSearchResults.length) {
-            this.loadedCount += this.BATCH_SIZE;
-            const nextBatch = this.allSearchResults.slice(0, this.loadedCount);
-            this.provider?.postMessage({ 
-                command: 'updateSymbols', 
-                symbols: nextBatch,
-                totalCount: this.allSearchResults.length
-            });
+        if (this.currentMode === 'project') {
+            const config = vscode.workspace.getConfiguration('symbolWindow');
+            if (config.get('enableDatabaseMode') && this.db && this.isDatabaseReady) {
+                const nextBatch = this.db.search(this.currentQuery, this.BATCH_SIZE, this.loadedCount);
+                if (nextBatch.length > 0) {
+                    const items = nextBatch.map(r => this.mapRecordToItem(r));
+                    this.allSearchResults.push(...items);
+                    this.loadedCount += items.length;
+                    this.provider?.postMessage({ 
+                        command: 'updateSymbols', 
+                        symbols: this.allSearchResults 
+                    });
+                }
+                return;
+            }
+
+            if (this.loadedCount < this.allSearchResults.length) {
+                this.loadedCount += this.BATCH_SIZE;
+                const nextBatch = this.allSearchResults.slice(0, this.loadedCount);
+                this.provider?.postMessage({ 
+                    command: 'updateSymbols', 
+                    symbols: nextBatch,
+                    totalCount: this.allSearchResults.length
+                });
+            }
         }
     }
 
@@ -560,5 +642,74 @@ export class SymbolController {
         if (uris && uris.length > 0) {
             this.setScope(uris[0].fsPath);
         }
+    }
+
+    private mapRecordToItem(record: any): SymbolItem {
+        const config = vscode.workspace.getConfiguration('symbolWindow');
+        const cleanCStyle = config.get<boolean>('cleanCStyleTypes', true);
+        const moveSignature = config.get<boolean>('moveSignatureToDetail', true);
+
+        let finalName = record.name;
+        let finalDetail = record.detail || '';
+        
+        let typeSuffix = '';
+        let signatureSuffix = '';
+
+        if (cleanCStyle) {
+            const { name, type } = parseCStyleType(finalName);
+            if (type) {
+                finalName = name;
+                typeSuffix = type;
+            }
+        }
+
+        if (moveSignature) {
+            const { name, signature } = parseSignature(finalName);
+            if (signature) {
+                finalName = name;
+                signatureSuffix = signature;
+            }
+        }
+
+        const parts: string[] = [];
+        if (signatureSuffix) {
+            parts.push(signatureSuffix);
+        }
+        if (typeSuffix) {
+            if (!finalDetail.toLowerCase().includes(typeSuffix)) {
+                parts.push(typeSuffix);
+            }
+        }
+        if (finalDetail) {
+            parts.push(finalDetail);
+        }
+        
+        // In Project Mode, it's helpful to see the container name (e.g. Class)
+        if (record.container_name && record.container_name !== finalDetail) {
+            parts.push(record.container_name);
+        }
+
+        finalDetail = parts.join('  ');
+
+        return {
+            name: finalName,
+            detail: finalDetail,
+            kind: record.kind,
+            range: new vscode.Range(
+                record.range_start_line, record.range_start_char,
+                record.range_end_line, record.range_end_char
+            ),
+            selectionRange: new vscode.Range(
+                record.selection_range_start_line, record.selection_range_start_char,
+                record.selection_range_end_line, record.selection_range_end_char
+            ),
+            children: [],
+            uri: vscode.Uri.file(record.file_path).toString(),
+            containerName: record.container_name
+        };
+    }
+
+    public setIndexer(indexer: SymbolIndexer) {
+        this.indexer = indexer;
     }
 }

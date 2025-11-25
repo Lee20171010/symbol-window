@@ -29,7 +29,9 @@ export type Message =
     | { command: 'refresh' }
     | { command: 'searchStart' }
     | { command: 'setSettings'; settings: { forceDeepSearch?: boolean; enableDeepSearch?: boolean } }
-    | { command: 'setScope'; scopePath?: string };
+    | { command: 'setScope'; scopePath?: string }
+    | { command: 'progress'; percent: number }
+    | { command: 'setDatabaseMode'; enabled: boolean };
 
 export type WebviewMessage =
     | { command: 'search'; query: string; includePattern?: string }

@@ -83,6 +83,16 @@
         "command": "symbol-window.deepSearchDisabled",
         "title": "Deep Search (Disabled - Enable in Settings)",
         "icon": "$(search-fuzzy)"
+      },
+      {
+        "command": "symbol-window.testSqlite",
+        "title": "Test SQLite Availability",
+        "icon": "$(database)"
+      },
+      {
+        "command": "symbol-window.rebuildIndex",
+        "title": "Rebuild Symbol Index",
+        "icon": "$(sync)"
       }
     ],
     "menus": {
@@ -99,12 +109,17 @@
         },
         {
           "command": "symbol-window.deepSearch",
-          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch && !symbolWindow.databaseReady",
           "group": "navigation"
         },
         {
           "command": "symbol-window.deepSearchDisabled",
-          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && !config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && !config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch && !symbolWindow.databaseReady",
+          "group": "navigation"
+        },
+        {
+          "command": "symbol-window.rebuildIndex",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDatabaseMode && symbolWindow.databaseReady",
           "group": "navigation"
         }
       ]
@@ -131,6 +146,11 @@
           "type": "boolean",
           "default": false,
           "description": "Always perform a Deep Search when searching in Project Mode. Requires 'symbolWindow.enableDeepSearch' to be true."
+        },
+        "symbolWindow.enableDatabaseMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Database Mode (Experimental). Uses a local SQLite database for instant project-wide symbol search."
         }
       }
     }
