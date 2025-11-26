@@ -253,4 +253,11 @@ export class SymbolDatabase {
         const result = this.db.prepare('SELECT COUNT(*) as count FROM files').get() as { count: number };
         return result.count;
     }
+
+    public clear() {
+        if (!this.db) { return; }
+        this.db.exec('DELETE FROM symbols;');
+        this.db.exec('DELETE FROM files;');
+        // Vacuum to reclaim space? Maybe overkill for now.
+    }
 }

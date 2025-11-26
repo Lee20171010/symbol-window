@@ -26,21 +26,30 @@ export class SymbolIndexer {
         this.context.subscriptions.push(this.statusBarItem);
     }
 
-    public async rebuildIndex() {
-        this.queue = [];
+    public async rebuildIndexFull() {
+        console.log('[Indexer] Rebuilding index (Full)...');
+        this.isPaused = true; // Pause current processing
+        this.queue = []; // Clear queue
         this.processedCount = 0;
+        this.totalToProcess = 0;
         
-        // 1. Find all files using Ripgrep
+        // Clear DB
+        this.db.clear();
+        
+        // Re-scan all files
         const files = await this.findAllFiles();
-        
         this.totalToProcess = files.length;
-        this.queue.push(...files);
+        this.queue = files;
         
-        console.log(`[Indexer] Found ${files.length} files to index.`);
-        this.updateStatusBar();
+        this.isPaused = false;
         this.statusBarItem.show();
-
         this.processQueue();
+    }
+
+    public async rebuildIndexIncremental() {
+        console.log('[Indexer] Rebuilding index (Incremental)...');
+        // Just trigger syncIndex, which does the diffing
+        await this.syncIndex();
     }
 
     private async findAllFiles(): Promise<vscode.Uri[]> {
@@ -146,8 +155,14 @@ export class SymbolIndexer {
                 break;
             }
 
-            // Process in batches of 20 (Balanced for LSP responsiveness and git check-ignore overhead)
-            const batchSize = 20;
+            // Get batch size from settings
+            const config = vscode.workspace.getConfiguration('symbolWindow');
+            let batchSize = config.get<number>('indexingBatchSize', 30);
+
+            if (batchSize <= 0) {
+                batchSize = this.queue.length; // Unlimited
+            }
+
             const batch = this.queue.splice(0, batchSize);
 
             // Filter out files that are ignored by .gitignore (using rg)
@@ -174,8 +189,13 @@ export class SymbolIndexer {
         this.statusBarItem.hide();
         if (this.queue.length === 0) {
             console.log('[Indexer] Indexing complete.');
+            // Notify completion
             if (this.onIndexingComplete) {
                 this.onIndexingComplete();
+            }
+            // Also notify progress 100% to clear UI
+            if (this.onProgress) {
+                this.onProgress(100);
             }
         } else {
             console.log('[Indexer] Indexing paused.');
@@ -300,6 +320,10 @@ export class SymbolIndexer {
             console.log('[Indexer] Index is up to date.');
             if (this.onIndexingComplete) {
                 this.onIndexingComplete();
+            }
+            // Also notify progress 100% to clear UI
+            if (this.onProgress) {
+                this.onProgress(100);
             }
         }
     }

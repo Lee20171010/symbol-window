@@ -226,3 +226,30 @@
         - Go to Settings -> Symbol Window -> Uncheck "Move Signature To Detail".
         - Refresh the view.
         - Verify the symbol appears as `myFunction(int a, char b)` in the main name text.
+- [ ] **Indexing Batch Size** (`symbolWindow.indexingBatchSize`)
+    - **Default (30)**:
+        - Trigger a full re-index (e.g., delete DB and reload).
+        - Verify indexing proceeds in chunks (observe logs or progress bar).
+    - **Unlimited (0)**:
+        - Set `symbolWindow.indexingBatchSize` to `0`.
+        - Trigger a full re-index.
+        - Verify indexing attempts to process all files in one go (may be faster but might freeze UI on huge repos).
+
+## 10. State Persistence & Stability
+- [ ] **UI State Persistence**
+    - **Scenario**: Indexing in Progress.
+        - Trigger a Full Rebuild.
+        - While the progress bar is moving, run `Developer: Reload Window`.
+        - **Verify**: The progress bar reappears and continues (or shows the correct state) after reload.
+    - **Scenario**: Database Mode Label.
+        - Ensure Database Mode is active (Title shows "PROJECT WORKSPACE (DATABASE)").
+        - Switch to the "Source Control" view, then back to "Symbol Window".
+        - **Verify**: The title still shows "PROJECT WORKSPACE (DATABASE)".
+- [ ] **Rebuild Index Commands**
+    - **Incremental**:
+        - Modify a file outside of VS Code (or just save one).
+        - Run `Symbol Window: Rebuild Symbol Index (Incremental)`.
+        - **Verify**: It finishes quickly and updates the index.
+    - **Full**:
+        - Run `Symbol Window: Rebuild Symbol Index (Full)`.
+        - **Verify**: The progress bar starts from 0% and goes to 100%. The database is cleared and repopulated.

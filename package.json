@@ -61,37 +61,39 @@
     },
     "commands": [
       {
-        "command": "symbol-window.focus",
-        "title": "Focus Symbol Window"
-      },
-      {
         "command": "symbol-window.refresh",
         "title": "Refresh",
+        "category": "Symbol Window",
         "icon": "$(refresh)"
       },
       {
         "command": "symbol-window.toggleMode",
         "title": "Toggle Mode (Current/Project)",
+        "category": "Symbol Window",
         "icon": "$(arrow-swap)"
       },
       {
         "command": "symbol-window.deepSearch",
         "title": "Deep Search",
+        "category": "Symbol Window",
         "icon": "$(search-fuzzy)"
       },
       {
         "command": "symbol-window.deepSearchDisabled",
         "title": "Deep Search (Disabled - Enable in Settings)",
+        "category": "Symbol Window",
         "icon": "$(search-fuzzy)"
       },
       {
-        "command": "symbol-window.testSqlite",
-        "title": "Test SQLite Availability",
-        "icon": "$(database)"
+        "command": "symbol-window.rebuildIndex",
+        "title": "Rebuild Symbol Index (Incremental)",
+        "category": "Symbol Window",
+        "icon": "$(sync)"
       },
       {
-        "command": "symbol-window.rebuildIndex",
-        "title": "Rebuild Symbol Index",
+        "command": "symbol-window.rebuildIndexFull",
+        "title": "Rebuild Symbol Index (Full)",
+        "category": "Symbol Window",
         "icon": "$(sync)"
       }
     ],
@@ -151,6 +153,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable Database Mode (Experimental). Uses a local SQLite database for instant project-wide symbol search."
+        },
+        "symbolWindow.indexingBatchSize": {
+          "type": "integer",
+          "default": 30,
+          "description": "Number of files to process in each indexing batch. Set to 0 for unlimited (process all at once). Default is 30."
         }
       }
     }

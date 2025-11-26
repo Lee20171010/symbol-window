@@ -41,7 +41,7 @@
     - **Double Click:** Jumps to the symbol location in the editor and reveals it.
 - **Cursor Sync (Current Editor Mode):** (Planned) Moving the cursor in the editor automatically highlights/selects the corresponding symbol in the tree and scrolls it into view.
 - **Keyboard Shortcuts:**
-    - The extension provides commands (`symbol-window.focus`, `symbol-window.refresh`, `symbol-window.toggleMode`) that users can bind to custom shortcuts.
+    - The extension provides commands (`symbol-window.refresh`, `symbol-window.toggleMode`, `symbol-window.rebuildIndex`, `symbol-window.rebuildIndexFull`) that users can bind to custom shortcuts.
 - **Keyboard Navigation (Webview):**
     - `Arrow Up/Down`: Move focus from Search Bar to the List, or navigate within the List.
     - `Arrow Left/Right`: Move cursor within the Search Bar (when focused).
@@ -318,7 +318,8 @@ The database schema is normalized to reduce storage size and improve query perfo
 2.  **LSP Bottleneck:**
     -   *Challenge:* Flooding the LSP with `getDocumentSymbol` requests can cause high CPU usage or crashes.
     -   *Solution:* **Smart Scheduler**.
-        -   **Batching:** Process files in small batches (e.g., 20 files) with delays between batches.
+        -   **Batching:** Process files in configurable batches (Default: 30 files) with delays between batches.
+            -   **Configuration:** `symbolWindow.indexingBatchSize` allows users to tune this. Setting to `0` enables unlimited batch size (process all at once).
         -   **User Preemption:** If the user triggers a search or interacts with the editor, pause the background indexing to prevent UI lag.
 3.  **File Filtering:**
     -   *Challenge:* Indexing irrelevant files (minified JS, logs, node_modules) wastes resources.

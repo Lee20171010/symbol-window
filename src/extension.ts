@@ -41,7 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
         try {
             indexer = new SymbolIndexer(context, db, 
                 (percent) => {
-                    provider.postMessage({ command: 'progress', percent });
+                    controller.updateProgress(percent);
                 },
                 () => {
                     // onIndexingComplete
@@ -62,13 +62,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(SymbolWebviewProvider.viewType, provider)
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand('symbol-window.focus', () => {
-			// Focus the view
-			vscode.commands.executeCommand('symbol-window-view.focus');
-		})
 	);
 
 	context.subscriptions.push(
@@ -113,23 +106,20 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('symbol-window.testSqlite', async () => {
-			try {
-				// @ts-ignore
-				const sqlite = await import('node:sqlite');
-				vscode.window.showInformationMessage(`Success: node:sqlite is available! Type: ${typeof sqlite.DatabaseSync}`);
-			} catch (e) {
-				vscode.window.showErrorMessage(`Error: node:sqlite not available. ${e}`);
-				console.error(e);
-			}
+		vscode.commands.registerCommand('symbol-window.rebuildIndex', () => {
+            if (indexer) {
+                // Default to Incremental
+                indexer.rebuildIndexIncremental();
+            } else {
+                vscode.window.showErrorMessage('Symbol Database is not available.');
+            }
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('symbol-window.rebuildIndex', () => {
+		vscode.commands.registerCommand('symbol-window.rebuildIndexFull', () => {
             if (indexer) {
-                // Notify UI to show rebuilding state if needed, but mainly indexer handles progress
-                indexer.rebuildIndex();
+                indexer.rebuildIndexFull();
             } else {
                 vscode.window.showErrorMessage('Symbol Database is not available.');
             }

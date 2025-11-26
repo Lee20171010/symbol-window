@@ -4,14 +4,31 @@ All notable changes to the "symbol-window" extension will be documented in this 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.1] - 2025-11-26
+
+### Added
+- **Configuration**: 
+    - `symbolWindow.indexingBatchSize`: Configure indexing performance (Default: 30 files/batch). Set to `0` for unlimited speed.
+- **Commands**:
+    - `Rebuild Symbol Index (Incremental)`: Safely updates the index for changed files.
+    - `Rebuild Symbol Index (Full)`: Completely clears and rebuilds the database.
+
+### Fixed
+- **State Persistence**: Fixed an issue where the "Database Mode" UI state and Indexing Progress bar would be lost when switching views or reloading the window.
+- **Progress Tracking**: Indexing progress is now robustly synced between the backend and the webview.
+
+### Removed
+- **Dev Commands**: Removed `symbol-window.testSqlite` and `symbol-window.focus` as they are no longer needed.
+
 ## [0.1.0] - 2025-11-26
 
 ### Added
 - **Database Mode**: A new high-performance mode backed by SQLite for instant symbol search in large workspaces.
     - **Persistent Index**: Symbols are indexed once and persisted to disk, eliminating wait times on startup.
     - **Incremental Updates**: The index is automatically updated in the background as you edit files.
-    -   **Hybrid Search**: Combines database speed with LSP accuracy.
-- **Configuration**: Added `symbolWindow.enableDatabaseMode` to enable the new mode.
+    - **Hybrid Search**: Combines database speed with LSP accuracy.
+- **Configuration**: 
+    - `symbolWindow.enableDatabaseMode`: Enable the new SQLite-based mode.
 - **UI**: Added a distinct **PROJECT WORKSPACE (DATABASE)** label when Database Mode is active.
 
 ### Changed

@@ -24,7 +24,7 @@ const App: React.FC = () => {
     const [includePattern, setIncludePattern] = useState(savedState.includePattern || '');
     const [showDetails, setShowDetails] = useState(savedState.showDetails || false);
     const [indexingProgress, setIndexingProgress] = useState<number | null>(null);
-    const [isDatabaseMode, setIsDatabaseMode] = useState(false);
+    const [isDatabaseMode, setIsDatabaseMode] = useState(savedState.isDatabaseMode || false);
 
     // Refs for accessing state in event listener
     const modeRef = useRef(mode);
@@ -37,8 +37,8 @@ const App: React.FC = () => {
 
     // Save state
     useEffect(() => {
-        vscode.setState({ mode, query, showDetails, includePattern });
-    }, [mode, query, showDetails, includePattern]);
+        vscode.setState({ mode, query, showDetails, includePattern, isDatabaseMode });
+    }, [mode, query, showDetails, includePattern, isDatabaseMode]);
 
     // Handle messages from extension
     useEffect(() => {
@@ -101,6 +101,11 @@ const App: React.FC = () => {
                 case 'setDatabaseMode':
                     // @ts-ignore
                     setIsDatabaseMode(message.enabled);
+                    // If database mode is enabled, ensure we are in project mode if not already?
+                    // No, user might be in current mode. But if in project mode, UI should update label.
+                    if (message.enabled && modeRef.current === 'project') {
+                        // Force re-render of title if needed, but React handles state change.
+                    }
                     break;
             }
         };

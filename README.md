@@ -53,6 +53,16 @@ You can customize the appearance and behavior of the symbol list via VS Code set
 - **`symbolWindow.enableDatabaseMode`** (Default: `true`):  
   Enables the high-performance SQLite-based indexing mode. Recommended for large projects.
 
+- **`symbolWindow.indexingBatchSize`** (Default: `30`):  
+  Controls how many files are processed in each indexing batch. Set to `0` for unlimited (process all files at once). Lower values reduce UI lag during indexing; higher values speed up indexing but may affect responsiveness.
+
+## Commands
+
+- **Symbol Window: Refresh**: Reloads symbols for the current view.
+- **Symbol Window: Toggle Mode**: Switches between Current Document and Project Workspace modes.
+- **Symbol Window: Rebuild Symbol Index (Incremental)**: Triggers a safe, incremental update of the symbol database (Database Mode only).
+- **Symbol Window: Rebuild Symbol Index (Full)**: Completely clears the database and re-indexes the entire workspace. Use this if the index appears corrupted.
+
 ## Usage
 
 ![alt text](media/SymbolWindow.png)

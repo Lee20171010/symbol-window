@@ -34,6 +34,7 @@ export class SymbolController {
     private probeIndex: number = 0;
     private readonly PROBE_CHARS = ['', 'e', 'a', 'i', 'o', 'u', 's', 't', 'r', 'n']; // Common letters
     private isDatabaseReady = false;
+    private lastProgress: number | null = null;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -102,16 +103,18 @@ export class SymbolController {
     }
 
     public setDatabaseReady(ready: boolean) {
-        if (this.isDatabaseReady === ready) { return; }
-
-        if (ready) {
-            console.log('[SymbolWindow] Indexing complete. Switching to Database Mode.');
-        }
-
+        // Always notify UI, even if state hasn't changed (for re-renders)
         this.isDatabaseReady = ready;
+        if (ready) {
+            this.lastProgress = null; // Clear progress when ready
+        }
         vscode.commands.executeCommand('setContext', 'symbolWindow.databaseReady', ready);
         // Notify webview to update UI (hide deep search, show rebuild)
         this.provider?.postMessage({ command: 'setDatabaseMode', enabled: ready });
+        
+        if (ready) {
+            console.log('[SymbolWindow] Indexing complete. Switching to Database Mode.');
+        }
     }
 
     public async refresh() {
@@ -121,6 +124,14 @@ export class SymbolController {
         // Sync mode to webview to ensure consistency
         this.provider?.postMessage({ command: 'setMode', mode: this.currentMode });
         
+        // Sync database mode state
+        this.provider?.postMessage({ command: 'setDatabaseMode', enabled: this.isDatabaseReady });
+
+        // Sync progress if active
+        if (this.lastProgress !== null) {
+            this.provider?.postMessage({ command: 'progress', percent: this.lastProgress });
+        }
+
         // Sync settings
         const config = vscode.workspace.getConfiguration('symbolWindow');
         this.provider?.postMessage({ 
@@ -711,5 +722,13 @@ export class SymbolController {
 
     public setIndexer(indexer: SymbolIndexer) {
         this.indexer = indexer;
+    }
+
+    public updateProgress(percent: number) {
+        this.lastProgress = percent;
+        if (percent >= 100) {
+            this.lastProgress = null;
+        }
+        this.provider?.postMessage({ command: 'progress', percent });
     }
 }
