@@ -7,7 +7,6 @@ interface SymbolTreeProps {
     onSelect: (symbol: SymbolItem) => void;
     selectedSymbol: SymbolItem | null;
     defaultExpanded?: boolean;
-    forceDeepSearch?: boolean;
 }
 
 const SymbolNode: React.FC<{ 
@@ -17,8 +16,7 @@ const SymbolNode: React.FC<{
     onSelect: (s: SymbolItem) => void;
     selectedSymbol: SymbolItem | null;
     defaultExpanded?: boolean;
-    forceDeepSearch?: boolean;
-}> = ({ symbol, depth, onJump, onSelect, selectedSymbol, defaultExpanded, forceDeepSearch }) => {
+}> = ({ symbol, depth, onJump, onSelect, selectedSymbol, defaultExpanded }) => {
     const [expanded, setExpanded] = useState(() => {
         if (symbol.autoExpand !== undefined) {
             return symbol.autoExpand;
@@ -91,11 +89,11 @@ const SymbolNode: React.FC<{
                 className={`symbol-item ${selectedSymbol === symbol ? 'selected' : ''}`}
                 style={{ 
                     paddingLeft: `${depth * 15 + 5}px`,
-                    backgroundColor: (symbol.isDeepSearch && !forceDeepSearch) ? 'var(--vscode-editor-findMatchHighlightBackground)' : undefined
+                    backgroundColor: symbol.isDeepSearch ? 'var(--vscode-editor-findMatchHighlightBackground)' : undefined
                 }}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
-                title={(symbol.isDeepSearch && !forceDeepSearch) ? "Result from Deep Search" : undefined}
+                title={symbol.isDeepSearch ? "Result from Deep Search" : undefined}
             >
                 <span 
                     className={`codicon symbol-expand-icon ${hasChildren ? (expanded ? 'codicon-chevron-down' : 'codicon-chevron-right') : 'hidden'}`}
@@ -122,7 +120,6 @@ const SymbolNode: React.FC<{
                             // This ensures that if a Struct matches, it expands to show itself, 
                             // but its children (members) remain collapsed by default.
                             defaultExpanded={false} 
-                            forceDeepSearch={forceDeepSearch}
                         />
                     ))}
                 </div>
@@ -131,19 +128,18 @@ const SymbolNode: React.FC<{
     );
 };
 
-const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, selectedSymbol, defaultExpanded, forceDeepSearch }) => {
+const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, selectedSymbol, defaultExpanded }) => {
     return (
-        <div className="tree-container">
+        <div className="symbol-tree">
             {symbols.map((symbol, index) => (
                 <SymbolNode 
-                    key={index} 
+                    key={`${symbol.name}-${index}`} 
                     symbol={symbol} 
                     depth={0} 
                     onJump={onJump}
                     onSelect={onSelect}
                     selectedSymbol={selectedSymbol}
                     defaultExpanded={defaultExpanded}
-                    forceDeepSearch={forceDeepSearch}
                 />
             ))}
         </div>

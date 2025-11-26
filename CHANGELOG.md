@@ -4,6 +4,25 @@ All notable changes to the "symbol-window" extension will be documented in this 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.2] - 2025-11-27
+
+### Fixed
+- **Incremental Indexing**: Fixed a critical bug where files with 0 symbols were ignored by the indexer, causing them to be re-scanned infinitely during incremental updates.
+- **Race Condition Handling**: Added robust existence checks (`fs.stat`) before processing files in the indexing queue. This prevents `ENOENT` errors caused by atomic save operations (delete-then-rename) when using `FileSystemWatcher`.
+
+### Changed
+- **Performance Tuning**: 
+    - Reduced default `symbolWindow.indexingBatchSize` from 30 to **15** to further reduce LSP load.
+    - Increased batch processing delay from 50ms to **100ms** to give the CPU more breathing room between batches.
+    - **Data Transfer**: Optimized `loadMore` to use incremental data transfer, reducing IPC overhead when scrolling through large result lists.
+- **Configuration**: 
+    - `symbolWindow.indexingBatchSize`: Added a hard limit of 200 files/batch to prevent LSP crashes.
+    - `symbolWindow.excludeFiles`: Added new setting to control which files are excluded from indexing. Default value now covers a comprehensive list of binary files, images, archives, and documentation (e.g., `.md`, `.txt`, `.pdf`, `.zip`, `.exe`) to prevent them from being indexed.
+    - `symbolWindow.includeFiles`: Added new setting to whitelist specific file patterns for indexing.
+
+### Removed
+- **Deep Search**: Removed `symbolWindow.forceDeepSearch` configuration and related logic. The new hybrid search flow is now the standard, making the manual force switch redundant.
+
 ## [0.1.1] - 2025-11-26
 
 ### Added

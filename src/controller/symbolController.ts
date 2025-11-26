@@ -137,7 +137,6 @@ export class SymbolController {
         this.provider?.postMessage({ 
             command: 'setSettings', 
             settings: {
-                forceDeepSearch: config.get<boolean>('forceDeepSearch', false),
                 enableDeepSearch: config.get<boolean>('enableDeepSearch', false)
             }
         });
@@ -185,7 +184,6 @@ export class SymbolController {
             this.provider.postMessage({ 
                 command: 'setSettings', 
                 settings: {
-                    forceDeepSearch: config.get<boolean>('forceDeepSearch', false),
                     enableDeepSearch: config.get<boolean>('enableDeepSearch', false)
                 }
             });
@@ -352,8 +350,7 @@ export class SymbolController {
             }
 
             const enableDeepSearch = config.get<boolean>('enableDeepSearch', false);
-            const forceDeepSearch = enableDeepSearch && config.get<boolean>('forceDeepSearch', false);
-            const debounceTime = forceDeepSearch ? 800 : 300;
+            const debounceTime = 300;
 
             this.debounceTimer = setTimeout(async () => {
                 if (searchId !== this.currentSearchId) { return; }
@@ -400,18 +397,6 @@ export class SymbolController {
                 let allSymbols: SymbolItem[] = [];
 
                 try {
-                    // If Force Deep Search is enabled, skip standard LSP search to avoid redundancy
-                    // UNLESS we want to use LSP for libraries/dependencies that Ripgrep can't see (e.g. node_modules)
-                    // But typically users want to search their source code.
-                    // Let's stick to the plan: If Force Deep Search, ONLY do Deep Search.
-                    
-                    if (forceDeepSearch) {
-                        if (!token.isCancellationRequested) {
-                            await this.deepSearch(true);
-                        }
-                        return;
-                    }
-
                     // Standard Search Logic (LSP)
                     // Fetch missing keywords
                     if (missingKeywords.length > 0) {
@@ -523,18 +508,19 @@ export class SymbolController {
                     this.allSearchResults.push(...items);
                     this.loadedCount += items.length;
                     this.provider?.postMessage({ 
-                        command: 'updateSymbols', 
-                        symbols: this.allSearchResults 
+                        command: 'appendSymbols', 
+                        symbols: items
                     });
                 }
                 return;
             }
 
             if (this.loadedCount < this.allSearchResults.length) {
+                const start = this.loadedCount;
                 this.loadedCount += this.BATCH_SIZE;
-                const nextBatch = this.allSearchResults.slice(0, this.loadedCount);
+                const nextBatch = this.allSearchResults.slice(start, this.loadedCount);
                 this.provider?.postMessage({ 
-                    command: 'updateSymbols', 
+                    command: 'appendSymbols', 
                     symbols: nextBatch,
                     totalCount: this.allSearchResults.length
                 });

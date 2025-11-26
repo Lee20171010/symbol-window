@@ -103,25 +103,10 @@
     - Reload the window.
     - Verify Scope and Include Pattern are preserved.
     - Verify the Details panel open/closed state is preserved.
-- [ ] **Force Deep Search**
-    - Set `symbolWindow.enableDeepSearch` to `true`.
-    - Set `symbolWindow.forceDeepSearch` to `true`.
-    - Type a query in Project Mode.
-    - Verify that "Deep Search" is triggered automatically (no button click needed).
-    - Verify the "Deep Search" button is hidden (since it's automatic).
-    - Verify results are returned.
-    - Verify results do NOT have a special background highlight (since all results are from Deep Search).
 - [ ] **Cancel Deep Search**
     - Trigger a long-running Deep Search (e.g., common keyword in large repo).
     - Click the "Cancel" button.
     - Verify the search stops and the loading indicator disappears.
-- [ ] **Results (Manual Mode)**
-    - Set `symbolWindow.forceDeepSearch` to `false`.
-    - Enter a common keyword (e.g., "User") that likely exceeds the LSP limit (100 results).
-    - Verify the "Deep Search" button is visible.
-    - Click "Deep Search" (if applicable).
-    - Verify the UI shows a "Searching..." state.
-    - Verify new results appear at the top of the list.
 - [ ] **Results Display**
     - Verify Deep Search results have a distinct background highlight (to distinguish from standard results).
     - Verify Deep Search results are collapsed by default.
@@ -130,19 +115,14 @@
 - [ ] **Deduplication**
     - Ensure symbols already found by the standard search are not duplicated in the Deep Search results.
 
-## 6. Database Mode
+## 6. Database Mode (Performance & Indexing)
 - [ ] **Enable Database Mode**
     - Set `symbolWindow.enableDatabaseMode` to `true` in settings.
     - Verify the view title changes to **PROJECT WORKSPACE (DATABASE)**.
-- [ ] **Initial Indexing**
-    - Enable Database Mode for the first time in a workspace.
-    - Verify a progress indicator or status message shows indexing is in progress.
-    - Verify symbols become searchable after indexing completes.
-- [ ] **Persistence**
-    - Index the workspace.
-    - Reload the window (`Developer: Reload Window`).
-    - Perform a search immediately.
-    - Verify results are returned instantly without re-indexing.
+- [ ] **Indexing Performance**
+    - Trigger `Rebuild Symbol Index (Full)`.
+    - Verify indexing completes reasonably fast (e.g., < 10s for small projects, < 1m for medium).
+    - Verify the progress bar updates smoothly.
 - [ ] **Incremental Updates**
     - Create a new file `test_symbol.ts` with a unique class `class TestUniqueSymbol {}`.
     - Save the file.
@@ -151,6 +131,20 @@
     - Delete the file.
     - Search for `TestUniqueSymbol`.
     - Verify the symbol is removed from the results.
+- [ ] **Exclude Files**
+    - Add `**/*.ts` to `symbolWindow.excludeFiles`.
+    - Rebuild Index.
+    - Verify no `.ts` symbols appear in search.
+    - Remove the exclusion.
+- [ ] **Include Files**
+    - Set `symbolWindow.includeFiles` to `**/*.md`.
+    - Rebuild Index.
+    - Verify ONLY `.md` files are indexed (if they have symbols).
+- [ ] **Persistence**
+    - Index the workspace.
+    - Reload the window (`Developer: Reload Window`).
+    - Perform a search immediately.
+    - Verify results are returned instantly without re-indexing.
 - [ ] **Git Integration (Ignored Files)**
     - Create a file inside `node_modules` or a folder listed in `.gitignore`.
     - Verify symbols from this file are **not** indexed or searchable.
@@ -227,15 +221,26 @@
         - Refresh the view.
         - Verify the symbol appears as `myFunction(int a, char b)` in the main name text.
 - [ ] **Indexing Batch Size** (`symbolWindow.indexingBatchSize`)
-    - **Default (30)**:
+    - **Default (15)**:
         - Trigger a full re-index (e.g., delete DB and reload).
         - Verify indexing proceeds in chunks (observe logs or progress bar).
-    - **Unlimited (0)**:
-        - Set `symbolWindow.indexingBatchSize` to `0`.
+    - **Max Limit (200)**:
+        - Set `symbolWindow.indexingBatchSize` to `0` or `300`.
         - Trigger a full re-index.
-        - Verify indexing attempts to process all files in one go (may be faster but might freeze UI on huge repos).
+        - Verify indexing proceeds in chunks of 200 (observe logs).
 
 ## 10. State Persistence & Stability
+- [ ] **Atomic Save Handling**
+    - (Requires external tool or script to simulate atomic save: write new -> rename -> delete old)
+    - Modify a file externally using an editor that performs atomic saves (e.g., Vim, or some configurations of VS Code).
+    - Verify no `ENOENT` errors appear in the "Extension Host" output channel.
+    - Verify the index is updated correctly.
+- [ ] **Empty File Handling**
+    - Create a file `empty.c` with no symbols (just comments or whitespace).
+    - Save the file.
+    - Verify the indexer processes it without error.
+    - Restart VS Code.
+    - Verify the indexer does **not** re-index `empty.c` (it should have been recorded in the DB with 0 symbols).
 - [ ] **UI State Persistence**
     - **Scenario**: Indexing in Progress.
         - Trigger a Full Rebuild.

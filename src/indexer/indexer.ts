@@ -7,6 +7,7 @@ import * as fs from 'fs';
 
 export class SymbolIndexer {
     private queue: vscode.Uri[] = [];
+    private queueSet = new Set<string>();
     private isProcessing = false;
     private isPaused = true; // Default to paused (wait for LSP ready)
     private processedCount = 0;
@@ -20,7 +21,8 @@ export class SymbolIndexer {
         private context: vscode.ExtensionContext, 
         private db: SymbolDatabase,
         private onProgress?: (percent: number) => void,
-        private onIndexingComplete?: () => void
+        private onIndexingComplete?: () => void,
+        private onRebuildFullStart?: () => void
     ) {
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.context.subscriptions.push(this.statusBarItem);
@@ -28,8 +30,15 @@ export class SymbolIndexer {
 
     public async rebuildIndexFull() {
         console.log('[Indexer] Rebuilding index (Full)...');
+        
+        // Notify start of full rebuild (set ready=false)
+        if (this.onRebuildFullStart) {
+            this.onRebuildFullStart();
+        }
+
         this.isPaused = true; // Pause current processing
         this.queue = []; // Clear queue
+        this.queueSet.clear();
         this.processedCount = 0;
         this.totalToProcess = 0;
         
@@ -40,6 +49,7 @@ export class SymbolIndexer {
         const files = await this.findAllFiles();
         this.totalToProcess = files.length;
         this.queue = files;
+        this.queueSet = new Set(files.map(u => u.toString()));
         
         this.isPaused = false;
         this.statusBarItem.show();
@@ -58,13 +68,27 @@ export class SymbolIndexer {
             return [];
         }
 
+        const config = vscode.workspace.getConfiguration('symbolWindow');
+        const includeFiles = config.get<string>('includeFiles', '');
+        // Default is now handled by package.json settings
+        const excludeFiles = config.get<string>('excludeFiles', '');
+
         return new Promise((resolve, reject) => {
             // Use rg --files to list all files respecting .gitignore
-            // We explicitly exclude binary and irrelevant files that might not be in .gitignore
             const args = [
-                '--files',
-                '--glob', '!**/*.{txt,log,lock,map,pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,gif,bmp,ico,svg,mp3,mp4,wav,zip,tar,gz,7z,rar,bin,exe,dll,so,dylib,pdb,obj,o,a,min.js,min.css}'
+                '--files'
             ];
+
+            // Add user defined include/exclude patterns
+            if (includeFiles) {
+                const patterns = includeFiles.split(',').map(p => p.trim()).filter(p => p.length > 0);
+                patterns.forEach(p => args.push('--glob', p));
+            }
+
+            if (excludeFiles) {
+                const patterns = excludeFiles.split(',').map(p => p.trim()).filter(p => p.length > 0);
+                patterns.forEach(p => args.push('--glob', `!${p}`));
+            }
 
             const child = cp.spawn(rgPath, args, {
                 cwd: rootPath
@@ -103,7 +127,9 @@ export class SymbolIndexer {
 
     public addToQueue(uri: vscode.Uri) {
         // Avoid duplicates
-        if (!this.queue.some(u => u.toString() === uri.toString())) {
+        const key = uri.toString();
+        if (!this.queueSet.has(key)) {
+            this.queueSet.add(key);
             this.queue.push(uri);
             this.totalToProcess++;
             this.updateStatusBar();
@@ -121,8 +147,8 @@ export class SymbolIndexer {
         gitignoreWatcher.onDidDelete(() => this.loadGitignore());
         this.context.subscriptions.push(gitignoreWatcher);
 
+        // 1. Handle File Creation, Deletion, and Changes
         const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-        
         this.context.subscriptions.push(watcher);
         
         watcher.onDidCreate(uri => {
@@ -130,7 +156,7 @@ export class SymbolIndexer {
             console.log('[Indexer] File created:', uri.fsPath);
             this.addToQueue(uri);
         });
-        
+
         watcher.onDidChange(uri => {
             if (this.shouldIgnore(uri)) { return; }
             console.log('[Indexer] File changed:', uri.fsPath);
@@ -157,13 +183,19 @@ export class SymbolIndexer {
 
             // Get batch size from settings
             const config = vscode.workspace.getConfiguration('symbolWindow');
-            let batchSize = config.get<number>('indexingBatchSize', 30);
+            let batchSize = config.get<number>('indexingBatchSize', 15);
 
-            if (batchSize <= 0) {
-                batchSize = this.queue.length; // Unlimited
+            // Limit batch size to avoid LSP crash
+            const MAX_BATCH_SIZE = 200;
+            if (batchSize <= 0 || batchSize > MAX_BATCH_SIZE) {
+                batchSize = MAX_BATCH_SIZE;
             }
 
             const batch = this.queue.splice(0, batchSize);
+            // Remove from set
+            for (const u of batch) {
+                this.queueSet.delete(u.toString());
+            }
 
             // Filter out files that are ignored by .gitignore (using rg)
             const validBatch = await this.filterExcludedFiles(batch);
@@ -182,7 +214,7 @@ export class SymbolIndexer {
             this.updateStatusBar();
 
             // Small delay to yield to UI
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         this.isProcessing = false;
@@ -204,6 +236,16 @@ export class SymbolIndexer {
 
     private async indexFile(uri: vscode.Uri) {
         try {
+            // 0. Check existence and get mtime first
+            // This prevents ENOENT errors if the file was deleted before we could process it
+            let stat: vscode.FileStat;
+            try {
+                stat = await vscode.workspace.fs.stat(uri);
+            } catch (error) {
+                // File likely deleted or not accessible, skip silently
+                return;
+            }
+
             // 1. Get Symbols
             // We use executeDocumentSymbolProvider. 
             // Note: This might open the document in the background.
@@ -212,16 +254,11 @@ export class SymbolIndexer {
                 uri
             );
 
-            if (!symbols || symbols.length === 0) {
-                return;
-            }
-
-            // 2. Flatten
-            const flatSymbols = this.flattenSymbols(symbols);
+            // Even if symbols is empty, we should record the file in DB to track mtime
+            // and avoid re-indexing it on every sync.
+            const flatSymbols = (symbols && symbols.length > 0) ? this.flattenSymbols(symbols) : [];
 
             // 3. Insert into DB
-            // We need file mtime.
-            const stat = await vscode.workspace.fs.stat(uri);
             const mtime = stat.mtime;
 
             // Use transaction for atomic update
@@ -283,23 +320,33 @@ export class SymbolIndexer {
         const toIndex: vscode.Uri[] = [];
         
         // Check for new or modified files
+        const filesToCheck: { path: string, uri: vscode.Uri, dbMtime: number }[] = [];
+
         for (const [path, uri] of workspaceFileMap) {
             const dbRecord = dbFiles.get(path);
             if (!dbRecord) {
                 // New file
                 toIndex.push(uri);
             } else {
-                // Check mtime
+                filesToCheck.push({ path, uri, dbMtime: dbRecord.mtime });
+            }
+        }
+
+        // Process filesToCheck in batches to check mtime
+        const BATCH_SIZE = 100;
+        for (let i = 0; i < filesToCheck.length; i += BATCH_SIZE) {
+            const batch = filesToCheck.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(async (item) => {
                 try {
-                    const stat = await vscode.workspace.fs.stat(uri);
+                    const stat = await vscode.workspace.fs.stat(item.uri);
                     // Allow 1s difference due to precision
-                    if (stat.mtime > dbRecord.mtime + 1000) {
-                        toIndex.push(uri);
+                    if (stat.mtime > item.dbMtime + 1000) {
+                        toIndex.push(item.uri);
                     }
                 } catch (e) {
-                    // File might be gone?
+                    // File might be gone or inaccessible
                 }
-            }
+            }));
         }
 
         // Check for deleted files
@@ -312,7 +359,15 @@ export class SymbolIndexer {
         if (toIndex.length > 0) {
             console.log(`[Indexer] Found ${toIndex.length} files to update.`);
             this.totalToProcess += toIndex.length;
-            this.queue.push(...toIndex);
+            
+            for (const uri of toIndex) {
+                const key = uri.toString();
+                if (!this.queueSet.has(key)) {
+                    this.queueSet.add(key);
+                    this.queue.push(uri);
+                }
+            }
+
             this.updateStatusBar();
             this.statusBarItem.show();
             this.processQueue();

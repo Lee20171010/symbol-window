@@ -28,10 +28,11 @@ export type Message =
     | { command: 'setQuery'; query: string }
     | { command: 'refresh' }
     | { command: 'searchStart' }
-    | { command: 'setSettings'; settings: { forceDeepSearch?: boolean; enableDeepSearch?: boolean } }
+    | { command: 'setSettings'; settings: { enableDeepSearch?: boolean } }
     | { command: 'setScope'; scopePath?: string }
     | { command: 'progress'; percent: number }
-    | { command: 'setDatabaseMode'; enabled: boolean };
+    | { command: 'setDatabaseMode'; enabled: boolean }
+    | { command: 'appendSymbols'; symbols: SymbolItem[]; totalCount?: number };
 
 export type WebviewMessage =
     | { command: 'search'; query: string; includePattern?: string }

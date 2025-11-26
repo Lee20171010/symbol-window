@@ -99,10 +99,8 @@
     - **Deep Search (Text Scan Fallback):**
         - **Configuration:**
             - `symbolWindow.enableDeepSearch`: Master switch (Default: `true`).
-            - `symbolWindow.forceDeepSearch`: Auto-trigger switch (Default: `false`).
         - **Trigger:**
             - Manual button click in Project Mode (if `enableDeepSearch` is true).
-            - Automatic if `forceDeepSearch` is true.
             - Fallback if standard search yields insufficient results (implementation detail).
         - **Optimization:**
             - **Regex Permutations:** Generates regex for all permutations of keywords (up to 5) to allow order-independent matching directly in `ripgrep` (e.g., `A.*B|B.*A`).
@@ -318,17 +316,25 @@ The database schema is normalized to reduce storage size and improve query perfo
 2.  **LSP Bottleneck:**
     -   *Challenge:* Flooding the LSP with `getDocumentSymbol` requests can cause high CPU usage or crashes.
     -   *Solution:* **Smart Scheduler**.
-        -   **Batching:** Process files in configurable batches (Default: 30 files) with delays between batches.
-            -   **Configuration:** `symbolWindow.indexingBatchSize` allows users to tune this. Setting to `0` enables unlimited batch size (process all at once).
+        -   **Batching:** Process files in configurable batches (Default: 15 files) with delays (100ms) between batches.
+            -   **Configuration:** `symbolWindow.indexingBatchSize` allows users to tune this.
         -   **User Preemption:** If the user triggers a search or interacts with the editor, pause the background indexing to prevent UI lag.
 3.  **File Filtering:**
     -   *Challenge:* Indexing irrelevant files (minified JS, logs, node_modules) wastes resources.
-    -   *Solution:* **Leverage Ripgrep**.
-        -   Use `rg --files` to discover files for indexing. This automatically respects `.gitignore` and handles binary/large file exclusion, reusing the robust logic already present in the Deep Search implementation.
+    -   *Solution:* **Leverage Ripgrep & Configuration**.
+        -   Use `rg --files` to discover files for indexing. This automatically respects `.gitignore` and handles binary/large file exclusion.
+        -   **Configuration:**
+            -   `symbolWindow.includeFiles`: Whitelist specific patterns (e.g., `**/*.c, **/*.h`). If set, only matching files are indexed.
+            -   `symbolWindow.excludeFiles`: Blacklist specific patterns (e.g., `**/*.md, **/*.txt`). These are excluded even if they pass `.gitignore`.
         -   Explicitly exclude `node_modules` unless configured otherwise.
 4.  **Path Consistency (Windows):**
     -   *Challenge:* Windows file paths are case-insensitive but inconsistent (e.g., `c:\Project` vs `C:\Project`). `ripgrep` and VS Code APIs may return different casing, leading to duplicate indexing or lookup failures.
     -   *Solution:* **Canonicalization**. Always normalize paths (e.g., `vscode.Uri.file(path).fsPath`) before storing in the database or querying.
+5.  **Atomic Saves & Race Conditions:**
+    -   *Challenge:* Many editors perform "atomic saves" (write new file -> delete old -> rename new). `FileSystemWatcher` events can trigger for the "delete" phase, causing `ENOENT` errors if the indexer tries to read the file immediately.
+    -   *Solution:* **Robust Event Handling**.
+        -   Use `FileSystemWatcher` for all events (`create`, `change`, `delete`) to ensure external changes (e.g., git pull) are captured.
+        -   Implement existence checks (`fs.stat`) before processing any file in the queue to gracefully handle files that disappear during processing (e.g., during atomic saves).
 
 ### 7.6 Next Steps
 1.  **POC:** Verify `node:sqlite` availability and performance in the VS Code environment.

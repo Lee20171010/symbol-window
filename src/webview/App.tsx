@@ -18,7 +18,6 @@ const App: React.FC = () => {
     const [backendStatus, setBackendStatus] = useState<'ready' | 'loading' | 'timeout'>(
         (savedState.mode || 'current') === 'project' ? 'loading' : 'ready'
     );
-    const [forceDeepSearch, setForceDeepSearch] = useState(false);
     const [enableDeepSearch, setEnableDeepSearch] = useState(false);
     const [scopePath, setScopePath] = useState<string | undefined>(undefined);
     const [includePattern, setIncludePattern] = useState(savedState.includePattern || '');
@@ -71,9 +70,6 @@ const App: React.FC = () => {
                     setQuery(message.query);
                     break;
                 case 'setSettings':
-                    if (message.settings?.forceDeepSearch !== undefined) {
-                        setForceDeepSearch(message.settings.forceDeepSearch);
-                    }
                     if (message.settings?.enableDeepSearch !== undefined) {
                         setEnableDeepSearch(message.settings.enableDeepSearch);
                     }
@@ -106,6 +102,14 @@ const App: React.FC = () => {
                     if (message.enabled && modeRef.current === 'project') {
                         // Force re-render of title if needed, but React handles state change.
                     }
+                    break;
+                case 'appendSymbols':
+                    // @ts-ignore
+                    setSymbols(prev => [...prev, ...message.symbols]);
+                    if (message.totalCount !== undefined) {
+                        setTotalCount(message.totalCount);
+                    }
+                    setIsSearching(false);
                     break;
             }
         };
@@ -382,7 +386,6 @@ const App: React.FC = () => {
                     onSelect={handleSelect}
                     selectedSymbol={selectedSymbol}
                     defaultExpanded={mode === 'current' ? !!query : false}
-                    forceDeepSearch={forceDeepSearch}
                 />
             </div>
         </div>

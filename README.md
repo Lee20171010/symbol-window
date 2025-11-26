@@ -47,14 +47,18 @@ You can customize the appearance and behavior of the symbol list via VS Code set
 - **`symbolWindow.enableDeepSearch`** (Default: `true`):  
   Enables the "Deep Search" feature in Project Mode. This feature uses `ripgrep` to scan files when standard symbol search is insufficient.
 
-- **`symbolWindow.forceDeepSearch`** (Default: `false`):  
-  If enabled (and `enableDeepSearch` is true), the extension will *always* use Deep Search for every query in Project Mode, skipping the standard LSP search. This is useful for very large codebases where LSP search is consistently incomplete.
-
 - **`symbolWindow.enableDatabaseMode`** (Default: `true`):  
   Enables the high-performance SQLite-based indexing mode. Recommended for large projects.
 
-- **`symbolWindow.indexingBatchSize`** (Default: `30`):  
-  Controls how many files are processed in each indexing batch. Set to `0` for unlimited (process all files at once). Lower values reduce UI lag during indexing; higher values speed up indexing but may affect responsiveness.
+- **`symbolWindow.indexingBatchSize`** (Default: `15`):  
+  Controls how many files are processed in each indexing batch. Max is 200. Default is 15. Lower values reduce UI lag during indexing; higher values speed up indexing but may affect responsiveness.
+
+- **`symbolWindow.includeFiles`** (Default: `""`):  
+  Comma-separated list of glob patterns to include in indexing (e.g. `**/*.c, **/*.h`). If empty, all files are included.
+
+- **`symbolWindow.excludeFiles`** (Default: `**/*.md, **/*.txt` + binaries):  
+  Comma-separated list of glob patterns to exclude from indexing. These are applied after `.gitignore`.  
+  **Default:** `**/*.md, **/*.txt, **/*.log, **/*.lock, **/*.map, **/*.pdf, **/*.doc, **/*.docx, **/*.xls, **/*.xlsx, **/*.ppt, **/*.pptx, **/*.png, **/*.jpg, **/*.jpeg, **/*.gif, **/*.bmp, **/*.ico, **/*.svg, **/*.mp3, **/*.mp4, **/*.wav, **/*.zip, **/*.tar, **/*.gz, **/*.7z, **/*.rar, **/*.bin, **/*.exe, **/*.dll, **/*.so, **/*.dylib, **/*.pdb, **/*.obj, **/*.o, **/*.a, **/*.min.js, **/*.min.css`
 
 ## Commands
 

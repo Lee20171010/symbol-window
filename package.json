@@ -111,12 +111,12 @@
         },
         {
           "command": "symbol-window.deepSearch",
-          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch && !symbolWindow.databaseReady",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDeepSearch && !symbolWindow.databaseReady",
           "group": "navigation"
         },
         {
           "command": "symbol-window.deepSearchDisabled",
-          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && !config.symbolWindow.enableDeepSearch && !config.symbolWindow.forceDeepSearch && !symbolWindow.databaseReady",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && !config.symbolWindow.enableDeepSearch && !symbolWindow.databaseReady",
           "group": "navigation"
         },
         {
@@ -144,11 +144,6 @@
           "default": true,
           "description": "Enable the Deep Search feature, which uses text scanning (Ripgrep) to find symbols when LSP results are truncated."
         },
-        "symbolWindow.forceDeepSearch": {
-          "type": "boolean",
-          "default": false,
-          "description": "Always perform a Deep Search when searching in Project Mode. Requires 'symbolWindow.enableDeepSearch' to be true."
-        },
         "symbolWindow.enableDatabaseMode": {
           "type": "boolean",
           "default": true,
@@ -156,8 +151,20 @@
         },
         "symbolWindow.indexingBatchSize": {
           "type": "integer",
-          "default": 30,
-          "description": "Number of files to process in each indexing batch. Set to 0 for unlimited (process all at once). Default is 30."
+          "default": 15,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Number of files to process in each indexing batch. Range: 1-200. Default is 15."
+        },
+        "symbolWindow.includeFiles": {
+          "type": "string",
+          "default": "",
+          "description": "Comma-separated list of glob patterns to include in indexing (e.g. **/*.c, **/*.h). If empty, all files are included."
+        },
+        "symbolWindow.excludeFiles": {
+          "type": "string",
+          "default": "**/*.md, **/*.txt, **/*.log, **/*.lock, **/*.map, **/*.pdf, **/*.doc, **/*.docx, **/*.xls, **/*.xlsx, **/*.ppt, **/*.pptx, **/*.png, **/*.jpg, **/*.jpeg, **/*.gif, **/*.bmp, **/*.ico, **/*.svg, **/*.mp3, **/*.mp4, **/*.wav, **/*.zip, **/*.tar, **/*.gz, **/*.7z, **/*.rar, **/*.bin, **/*.exe, **/*.dll, **/*.so, **/*.dylib, **/*.pdb, **/*.obj, **/*.o, **/*.a, **/*.min.js, **/*.min.css",
+          "description": "Comma-separated list of glob patterns to exclude from indexing (e.g. **/*.md). These are applied after .gitignore."
         }
       }
     }

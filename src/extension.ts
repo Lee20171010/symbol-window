@@ -46,6 +46,10 @@ export function activate(context: vscode.ExtensionContext) {
                 () => {
                     // onIndexingComplete
                     controller.setDatabaseReady(true);
+                },
+                () => {
+                    // onRebuildFullStart
+                    controller.setDatabaseReady(false);
                 }
             );
 
