@@ -68,10 +68,10 @@ export class SymbolIndexer {
             return [];
         }
 
-        const config = vscode.workspace.getConfiguration('symbolWindow');
-        const includeFiles = config.get<string>('includeFiles', '');
+        const sharedConfig = vscode.workspace.getConfiguration('shared');
+        const includeFiles = sharedConfig.get<string>('includeFiles', '');
         // Default is now handled by package.json settings
-        const excludeFiles = config.get<string>('excludeFiles', '');
+        const excludeFiles = sharedConfig.get<string>('excludeFiles', '');
 
         return new Promise((resolve, reject) => {
             // Use rg --files to list all files respecting .gitignore
@@ -182,8 +182,8 @@ export class SymbolIndexer {
             }
 
             // Get batch size from settings
-            const config = vscode.workspace.getConfiguration('symbolWindow');
-            let batchSize = config.get<number>('indexingBatchSize', 15);
+            const sharedConfig = vscode.workspace.getConfiguration('shared');
+            let batchSize = sharedConfig.get<number>('indexingBatchSize', 15);
 
             // Limit batch size to avoid LSP crash
             const MAX_BATCH_SIZE = 200;

@@ -316,7 +316,8 @@ export class SymbolController {
             
             const searchId = ++this.currentSearchId;
             const config = vscode.workspace.getConfiguration('symbolWindow');
-            const enableDatabaseMode = config.get<boolean>('enableDatabaseMode', false);
+            const sharedConfig = vscode.workspace.getConfiguration('shared');
+            const enableDatabaseMode = sharedConfig.get<boolean>('enableDatabaseMode', false);
 
             // Hybrid Transition: Use DB only if indexing is complete (isDatabaseReady)
             if (enableDatabaseMode && this.db && this.isDatabaseReady) {
@@ -500,8 +501,8 @@ export class SymbolController {
 
     public loadMore() {
         if (this.currentMode === 'project') {
-            const config = vscode.workspace.getConfiguration('symbolWindow');
-            if (config.get('enableDatabaseMode') && this.db && this.isDatabaseReady) {
+            const sharedConfig = vscode.workspace.getConfiguration('shared');
+            if (sharedConfig.get('enableDatabaseMode') && this.db && this.isDatabaseReady) {
                 const nextBatch = this.db.search(this.currentQuery, this.BATCH_SIZE, this.loadedCount);
                 if (nextBatch.length > 0) {
                     const items = nextBatch.map(r => this.mapRecordToItem(r));

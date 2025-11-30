@@ -34,8 +34,8 @@ export function activate(context: vscode.ExtensionContext) {
     const controller = new SymbolController(context, db, undefined); // Pass undefined indexer first
     const provider = new SymbolWebviewProvider(context.extensionUri, controller);
 
-    const config = vscode.workspace.getConfiguration('symbolWindow');
-    const enableDatabaseMode = config.get<boolean>('enableDatabaseMode', true);
+    const sharedConfig = vscode.workspace.getConfiguration('shared');
+    const enableDatabaseMode = sharedConfig.get<boolean>('enableDatabaseMode', true);
 
     if (db && enableDatabaseMode) {
         try {
