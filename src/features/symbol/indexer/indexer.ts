@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SymbolDatabase, SymbolRecord } from '../db/database';
+import { SymbolDatabase, SymbolRecord } from '../../../shared/db/database';
 import * as cp from 'child_process';
 import { rgPath } from '@vscode/ripgrep';
 import * as path from 'path';

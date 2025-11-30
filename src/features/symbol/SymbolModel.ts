@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SymbolItem } from '../shared/types';
+import { SymbolItem } from '../../shared/types';
 import * as cp from 'child_process';
 import { rgPath } from '@vscode/ripgrep';
 

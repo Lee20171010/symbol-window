@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { VSCodeTextField } from '@vscode/webview-ui-toolkit/react';
 import { SymbolItem, SymbolMode, WebviewMessage, Message } from '../shared/types';
-import SymbolTree from './components/SymbolTree';
+import SymbolTree from './features/symbol/SymbolTree';
 import './style.css';
 
 // Acquire VS Code API

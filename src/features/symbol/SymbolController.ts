@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import { SymbolModel, parseCStyleType, parseSignature } from '../model/symbolModel';
-import { SymbolWebviewProvider } from '../view/SymbolWebviewProvider';
-import { SymbolMode, SymbolItem } from '../shared/types';
-import { SymbolDatabase } from '../db/database';
-import { SymbolIndexer } from '../indexer/indexer';
+import { SymbolModel, parseCStyleType, parseSignature } from './SymbolModel';
+import { SymbolWebviewProvider } from './SymbolWebviewProvider';
+import { SymbolMode, SymbolItem } from '../../shared/types';
+import { SymbolDatabase } from '../../shared/db/database';
+import { SymbolIndexer } from './indexer/indexer';
 
 export class SymbolController {
     private model: SymbolModel;

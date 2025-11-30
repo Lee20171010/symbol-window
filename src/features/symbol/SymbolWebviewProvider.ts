@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { SymbolController } from '../controller/symbolController';
-import { WebviewMessage } from '../shared/types';
+import { SymbolController } from './SymbolController';
+import { WebviewMessage } from '../../shared/types';
 
 export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'symbol-window-view';

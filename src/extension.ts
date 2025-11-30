@@ -1,10 +1,10 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { SymbolController } from './controller/symbolController';
-import { SymbolWebviewProvider } from './view/SymbolWebviewProvider';
-import { SymbolDatabase } from './db/database';
-import { SymbolIndexer } from './indexer/indexer';
+import { SymbolController } from './features/symbol/SymbolController';
+import { SymbolWebviewProvider } from './features/symbol/SymbolWebviewProvider';
+import { SymbolDatabase } from './shared/db/database';
+import { SymbolIndexer } from './features/symbol/indexer/indexer';
 
 let globalDb: SymbolDatabase | undefined;
 

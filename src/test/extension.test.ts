@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { parseCStyleType, parseSignature } from '../model/symbolModel';
+import { parseCStyleType, parseSignature } from '../features/symbol/SymbolModel';
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');

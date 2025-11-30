@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SymbolItem } from '../../shared/types';
+import { SymbolItem } from '../../../shared/types';
 
 interface SymbolTreeProps {
     symbols: SymbolItem[];
