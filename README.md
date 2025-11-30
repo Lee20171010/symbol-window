@@ -38,6 +38,12 @@ For large workspaces where standard LSP search is slow or incomplete, Symbol Win
 
 You can customize the appearance and behavior of the symbol list via VS Code settings:
 
+- **`symbolWindow.enable`** (Default: `true`):
+  Enable or disable the Symbol Window view.
+
+- **`relationWindow.enable`** (Default: `true`):
+  Enable or disable the Relation Window view.
+
 - **`symbolWindow.cleanCStyleTypes`** (Default: `true`):  
   Moves C-style type suffixes (e.g., `(typedef)`, `(struct)`) from the symbol name to the detail view (gray text).
   

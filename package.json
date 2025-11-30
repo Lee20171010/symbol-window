@@ -46,7 +46,7 @@
       "activitybar": [
         {
           "id": "symbol-window-container",
-          "title": "Symbol Window",
+          "title": "Window",
           "icon": "$(symbol-structure)"
         }
       ]
@@ -56,12 +56,20 @@
         {
           "type": "webview",
           "id": "symbol-window-view",
-          "name": "Symbol Window"
+          "name": "Symbol Window",
+          "when": "config.symbolWindow.enable"
         },
         {
           "type": "webview",
           "id": "relation-window-view",
-          "name": "Relation Window"
+          "name": "Relation Window",
+          "when": "config.relationWindow.enable"
+        },
+        {
+          "type": "webview",
+          "id": "all-disabled-view",
+          "name": " ",
+          "when": "!config.symbolWindow.enable && !config.relationWindow.enable"
         }
       ]
     },

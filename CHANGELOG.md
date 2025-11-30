@@ -4,6 +4,19 @@ All notable changes to the "symbol-window" extension will be documented in this 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [unrelease]
+
+### Refactor
+- **Shared Core**: Extracted `LspClient` and `DatabaseManager` to `src/shared/core`. This centralizes the LSP connection and SQLite database management, allowing both the Symbol Window and the upcoming Relation Window to share the same resources efficiently.
+- **Status Bar**: Removed the dedicated status bar logic from `SymbolIndexer`.
+
+### UI/UX
+- **Container**: Renamed the main Activity Bar container from "Symbol Window" to **"Window"**. This provides a neutral parent container for both the Symbol and Relation views.
+- **Foolproof View**: Introduced a "Foolproof" view (`all-disabled-view`) that activates when both `symbolWindow.enable` and `relationWindow.enable` are set to `false`. It displays a clean interface with buttons to easily re-enable either window.
+
+### Added
+- **Relation Window**: Added the initial scaffolding for the Relation Window (`relation-window-view`) in `package.json`.
+
 ## [0.1.2] - 2025-11-27
 
 ### Fixed
