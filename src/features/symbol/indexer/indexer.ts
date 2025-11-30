@@ -12,7 +12,6 @@ export class SymbolIndexer {
     private isPaused = true; // Default to paused (wait for LSP ready)
     private processedCount = 0;
     private totalToProcess = 0;
-    private statusBarItem: vscode.StatusBarItem;
 
     private rootIgnored = new Set<string>(['.git', '.DS_Store', '.vscode']);
     private anywhereIgnored = new Set<string>([]);
@@ -24,8 +23,6 @@ export class SymbolIndexer {
         private onIndexingComplete?: () => void,
         private onRebuildFullStart?: () => void
     ) {
-        this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-        this.context.subscriptions.push(this.statusBarItem);
     }
 
     public async rebuildIndexFull() {
@@ -52,7 +49,6 @@ export class SymbolIndexer {
         this.queueSet = new Set(files.map(u => u.toString()));
         
         this.isPaused = false;
-        this.statusBarItem.show();
         this.processQueue();
     }
 
@@ -218,7 +214,6 @@ export class SymbolIndexer {
         }
 
         this.isProcessing = false;
-        this.statusBarItem.hide();
         if (this.queue.length === 0) {
             console.log('[Indexer] Indexing complete.');
             // Notify completion
@@ -300,7 +295,6 @@ export class SymbolIndexer {
 
     private updateStatusBar() {
         const percent = Math.floor((this.processedCount / this.totalToProcess) * 100);
-        this.statusBarItem.text = `$(sync~spin) Indexing Symbols... ${percent}%`;
         if (this.onProgress) {
             this.onProgress(percent);
         }
@@ -369,7 +363,6 @@ export class SymbolIndexer {
             }
 
             this.updateStatusBar();
-            this.statusBarItem.show();
             this.processQueue();
         } else {
             console.log('[Indexer] Index is up to date.');
