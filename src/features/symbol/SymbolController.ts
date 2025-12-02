@@ -4,6 +4,8 @@ import { SymbolWebviewProvider } from './SymbolWebviewProvider';
 import { SymbolMode, SymbolItem } from '../../shared/types';
 import { SymbolDatabase } from '../../shared/db/database';
 import { SymbolIndexer } from './indexer/indexer';
+import { LspClient, LspStatus } from '../../shared/core/LspClient';
+import { DatabaseManager } from '../../shared/core/DatabaseManager';
 
 export class SymbolController {
     private model: SymbolModel;
@@ -38,8 +40,8 @@ export class SymbolController {
 
     constructor(
         context: vscode.ExtensionContext,
-        private db?: SymbolDatabase,
-        private indexer?: SymbolIndexer
+        private lspClient: LspClient,
+        private dbManager: DatabaseManager
     ) {
         this.context = context;
         this.model = new SymbolModel();
@@ -49,9 +51,30 @@ export class SymbolController {
         this.currentScopePath = this.context.workspaceState.get<string>('symbolWindow.scopePath');
         vscode.commands.executeCommand('setContext', 'symbolWindow.mode', this.currentMode);
 
+        // Listen to LSP status
+        this.lspClient.onStatusChange(status => {
+            this.provider?.postMessage({ command: 'status', status: status });
+            if (status === 'ready') {
+                this.dbManager.resumeIndexing();
+                // If we just became ready, refresh to show symbols
+                this.refresh();
+            } else if (status === 'loading') {
+                this.dbManager.pauseIndexing();
+            }
+        });
+
+        // Listen to DB status
+        this.dbManager.onReadyChange(ready => {
+            this.setDatabaseReady(ready);
+        });
+        
+        this.dbManager.onProgress(percent => {
+            this.updateProgress(percent);
+        });
+
         // Listen to active editor changes
         vscode.window.onDidChangeActiveTextEditor(editor => {
-            // Current Mode: Always try to update immediately, independent of workspace readiness
+            // Current Mode: Always try to update immediately
             if (this.currentMode === 'current') {
                 if (editor) {
                     this.updateCurrentSymbols(editor.document.uri).catch(e => {
@@ -60,17 +83,6 @@ export class SymbolController {
                 } else {
                     this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
                 }
-            }
-
-            // Workspace Readiness Logic
-            if (this.readiness === 'standby') {
-                // Trigger polling if we have an editor (signal that user is working)
-                if (editor) {
-                    this.startPolling();
-                }
-            } else if (this.readiness === 'ready') {
-                // Ensure UI knows we are ready (in case of reload)
-                this.provider?.postMessage({ command: 'status', status: 'ready' });
             }
         }, null, context.subscriptions);
 
@@ -82,11 +94,6 @@ export class SymbolController {
             // 2. Current Mode: Update immediately
             if (this.currentMode === 'current') {
                 this.updateCurrentSymbols(doc.uri);
-            }
-
-            // 3. Workspace Readiness: If standby, try polling again (maybe saving fixed LSP?)
-            if (this.readiness === 'standby') {
-                this.startPolling();
             }
         }, null, context.subscriptions);
         
@@ -145,10 +152,10 @@ export class SymbolController {
         this.provider?.postMessage({ command: 'setScope', scopePath: this.currentScopePath });
 
         // If standby, try polling again (Manual Retry)
-        if (this.readiness === 'standby') {
-            this.startPolling();
+        if (this.lspClient.status === 'standby') {
+            this.lspClient.startPolling();
         } else {
-             this.provider?.postMessage({ command: 'status', status: this.readiness });
+             this.provider?.postMessage({ command: 'status', status: this.lspClient.status });
         }
 
         if (this.currentMode === 'current') {
@@ -164,7 +171,7 @@ export class SymbolController {
         }
 
         // Project Mode Logic
-        if (this.readiness === 'loading') {
+        if (this.lspClient.status === 'loading') {
             return;
         }
         
@@ -190,97 +197,15 @@ export class SymbolController {
         }
         
         // If ready, refresh. If standby, maybe poll?
-        if (this.readiness === 'ready') {
+        if (this.lspClient.status === 'ready') {
             this.refresh();
-        } else if (this.readiness === 'standby') {
-            this.startPolling();
+        } else if (this.lspClient.status === 'standby') {
+            this.lspClient.startPolling();
         }
     }
 
     public async startPolling() {
-        if (this.readiness === 'loading' || this.readiness === 'ready') {
-            return;
-        }
-        
-        this.readiness = 'loading';
-        this.retryCount = 0;
-        this.provider?.postMessage({ command: 'status', status: 'loading' });
-        
-        // Pause Indexer while polling
-        if (this.indexer) {
-            this.indexer.pause();
-        }
-
-        this.poll();
-    }
-
-    private async poll() {
-        if (this.readiness !== 'loading') {
-            return; // Guard
-        }
-
-        try {
-            // Rotate probe characters
-            const probeChar = this.PROBE_CHARS[this.probeIndex];
-            this.probeIndex = (this.probeIndex + 1) % this.PROBE_CHARS.length;
-
-            const result = await this.model.getWorkspaceSymbols(probeChar);
-            
-            const hasWorkspace = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0;
-            const hasActiveEditor = !!vscode.window.activeTextEditor;
-
-            // If we are in Current Mode and there is no active editor, we are "ready" (empty state).
-            if (this.currentMode === 'current' && !hasActiveEditor) {
-                // We set readiness to 'standby' so that when an editor IS opened, 
-                // onDidChangeActiveTextEditor will trigger startPolling() again.
-                // We tell the UI we are 'ready' just to stop the spinner.
-                this.readiness = 'standby';
-                this.provider?.postMessage({ command: 'status', status: 'ready' });
-                this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
-                return;
-            }
-
-            if (result.length > 0 || (!hasWorkspace) || (!hasActiveEditor)) {
-                // If we found symbols OR no workspace OR no editor open
-                this.readiness = 'ready';
-                this.provider?.postMessage({ command: 'status', status: 'ready' });
-                
-                // Notify Indexer
-                if (this.indexer) {
-                    this.indexer.resume();
-                }
-
-                // Trigger refresh to update UI (Current: re-fetch symbols, Project: re-run search)
-                this.refresh();
-                return; // Stop recursion
-            } else {
-                // Fail condition
-                this.retryCount++;
-                if (this.retryCount > this.MAX_RETRIES) {
-                    this.readiness = 'standby'; // Back to standby (timeout)
-                    if (this.indexer) { this.indexer.pause(); } // Ensure paused
-                    if (this.currentMode === 'project') {
-                        this.provider?.postMessage({ command: 'status', status: 'timeout' });
-                    }
-                    return;
-                }
-                
-                // Retry after a delay
-                setTimeout(() => this.poll(), 3000);
-            }
-        } catch (e) {
-            // Fail condition
-            this.retryCount++;
-            if (this.retryCount > this.MAX_RETRIES) {
-                this.readiness = 'standby'; // Back to standby (timeout)
-                if (this.indexer) { this.indexer.pause(); } // Ensure paused
-                if (this.currentMode === 'project') {
-                    this.provider?.postMessage({ command: 'status', status: 'timeout' });
-                }
-                return;
-            }
-            setTimeout(() => this.poll(), 3000);
-        }
+        this.lspClient.startPolling();
     }
 
     public cancelSearch() {
@@ -299,7 +224,7 @@ export class SymbolController {
             this.currentIncludePattern = includePattern;
 
             // If not ready, don't search, just ensure UI is in loading state
-            if (this.readiness !== 'ready') {
+            if (this.lspClient.status !== 'ready') {
                 this.provider?.postMessage({ command: 'status', status: 'loading' });
                 return;
             }
@@ -315,11 +240,11 @@ export class SymbolController {
             if (this.debounceTimer) { clearTimeout(this.debounceTimer); }
             
             const searchId = ++this.currentSearchId;
-            const config = vscode.workspace.getConfiguration('symbolWindow');
+            const config = vscode.workspace.getConfiguration('shared');
             const enableDatabaseMode = config.get<boolean>('enableDatabaseMode', false);
 
             // Hybrid Transition: Use DB only if indexing is complete (isDatabaseReady)
-            if (enableDatabaseMode && this.db && this.isDatabaseReady) {
+            if (enableDatabaseMode && this.dbManager.db && this.isDatabaseReady) {
                 this.debounceTimer = setTimeout(async () => {
                     if (searchId !== this.currentSearchId) { return; }
                     
@@ -332,7 +257,7 @@ export class SymbolController {
                     }
 
                     try {
-                        const records = this.db!.search(query, this.BATCH_SIZE, 0);
+                        const records = this.dbManager.db!.search(query, this.BATCH_SIZE, 0);
                         const items = records.map(r => this.mapRecordToItem(r));
                         
                         this.allSearchResults = items;
@@ -463,9 +388,8 @@ export class SymbolController {
                         
                         // LSP Crash / Error Recovery
                         // If the search fails (e.g. LSP crash), revert to standby and try to recover
-                        this.readiness = 'standby';
                         this.provider?.postMessage({ command: 'status', status: 'loading' }); // Show loading in UI
-                        this.startPolling();
+                        this.lspClient.startPolling();
                     }
                     return;
                 }
@@ -500,9 +424,9 @@ export class SymbolController {
 
     public loadMore() {
         if (this.currentMode === 'project') {
-            const config = vscode.workspace.getConfiguration('symbolWindow');
-            if (config.get('enableDatabaseMode') && this.db && this.isDatabaseReady) {
-                const nextBatch = this.db.search(this.currentQuery, this.BATCH_SIZE, this.loadedCount);
+            const config = vscode.workspace.getConfiguration('shared');
+            if (config.get('enableDatabaseMode') && this.dbManager.db && this.isDatabaseReady) {
+                const nextBatch = this.dbManager.db.search(this.currentQuery, this.BATCH_SIZE, this.loadedCount);
                 if (nextBatch.length > 0) {
                     const items = nextBatch.map(r => this.mapRecordToItem(r));
                     this.allSearchResults.push(...items);
@@ -706,9 +630,7 @@ export class SymbolController {
         };
     }
 
-    public setIndexer(indexer: SymbolIndexer) {
-        this.indexer = indexer;
-    }
+
 
     public updateProgress(percent: number) {
         this.lastProgress = percent;

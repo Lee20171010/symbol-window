@@ -10,7 +10,8 @@
     "url": "https://github.com/Lee20171010"
   },
   "activationEvents": [
-    "onView:symbol-window-view"
+    "onView:symbol-window-view",
+    "onView:relation-window-view"
   ],
   "repository": {
     "type": "git",
@@ -45,7 +46,7 @@
       "activitybar": [
         {
           "id": "symbol-window-container",
-          "title": "Symbol Window",
+          "title": "Window",
           "icon": "$(symbol-structure)"
         }
       ]
@@ -55,7 +56,20 @@
         {
           "type": "webview",
           "id": "symbol-window-view",
-          "name": "Symbol Window"
+          "name": "Symbol Window",
+          "when": "config.symbolWindow.enable"
+        },
+        {
+          "type": "webview",
+          "id": "relation-window-view",
+          "name": "Relation Window",
+          "when": "config.relationWindow.enable"
+        },
+        {
+          "type": "webview",
+          "id": "all-disabled-view",
+          "name": " ",
+          "when": "!config.symbolWindow.enable && !config.relationWindow.enable"
         }
       ]
     },
@@ -95,6 +109,24 @@
         "title": "Rebuild Symbol Index (Full)",
         "category": "Symbol Window",
         "icon": "$(sync)"
+      },
+      {
+        "command": "relation-window.refresh",
+        "title": "Refresh",
+        "category": "Relation Window",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "relation-window.toggleDirection",
+        "title": "Toggle Direction (Callers/Callees)",
+        "category": "Relation Window",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "relation-window.deepSearch",
+        "title": "Deep Search",
+        "category": "Relation Window",
+        "icon": "$(search-fuzzy)"
       }
     ],
     "menus": {
@@ -120,8 +152,18 @@
           "group": "navigation"
         },
         {
-          "command": "symbol-window.rebuildIndex",
-          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDatabaseMode && symbolWindow.databaseReady",
+          "command": "relation-window.toggleDirection",
+          "when": "view == relation-window-view",
+          "group": "navigation"
+        },
+        {
+          "command": "relation-window.refresh",
+          "when": "view == relation-window-view",
+          "group": "navigation"
+        },
+        {
+          "command": "relation-window.deepSearch",
+          "when": "view == relation-window-view && config.relationWindow.enableDeepSearch",
           "group": "navigation"
         }
       ]
@@ -129,6 +171,21 @@
     "configuration": {
       "title": "Symbol Window",
       "properties": {
+        "symbolWindow.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Symbol Window."
+        },
+        "relationWindow.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Relation Window."
+        },
+        "relationWindow.enableDeepSearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Deep Search in Relation Window (uses text scanning when LSP results are insufficient)."
+        },
         "symbolWindow.cleanCStyleTypes": {
           "type": "boolean",
           "default": true,
@@ -144,24 +201,24 @@
           "default": true,
           "description": "Enable the Deep Search feature, which uses text scanning (Ripgrep) to find symbols when LSP results are truncated."
         },
-        "symbolWindow.enableDatabaseMode": {
+        "shared.enableDatabaseMode": {
           "type": "boolean",
           "default": true,
           "description": "Enable Database Mode (Experimental). Uses a local SQLite database for instant project-wide symbol search."
         },
-        "symbolWindow.indexingBatchSize": {
+        "shared.indexingBatchSize": {
           "type": "integer",
           "default": 15,
           "minimum": 1,
           "maximum": 200,
           "description": "Number of files to process in each indexing batch. Range: 1-200. Default is 15."
         },
-        "symbolWindow.includeFiles": {
+        "shared.includeFiles": {
           "type": "string",
           "default": "",
           "description": "Comma-separated list of glob patterns to include in indexing (e.g. **/*.c, **/*.h). If empty, all files are included."
         },
-        "symbolWindow.excludeFiles": {
+        "shared.excludeFiles": {
           "type": "string",
           "default": "**/*.md, **/*.txt, **/*.log, **/*.lock, **/*.map, **/*.pdf, **/*.doc, **/*.docx, **/*.xls, **/*.xlsx, **/*.ppt, **/*.pptx, **/*.png, **/*.jpg, **/*.jpeg, **/*.gif, **/*.bmp, **/*.ico, **/*.svg, **/*.mp3, **/*.mp4, **/*.wav, **/*.zip, **/*.tar, **/*.gz, **/*.7z, **/*.rar, **/*.bin, **/*.exe, **/*.dll, **/*.so, **/*.dylib, **/*.pdb, **/*.obj, **/*.o, **/*.a, **/*.min.js, **/*.min.css",
           "description": "Comma-separated list of glob patterns to exclude from indexing (e.g. **/*.md). These are applied after .gitignore."

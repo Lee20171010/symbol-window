@@ -12,7 +12,6 @@ export class SymbolIndexer {
     private isPaused = true; // Default to paused (wait for LSP ready)
     private processedCount = 0;
     private totalToProcess = 0;
-    private statusBarItem: vscode.StatusBarItem;
 
     private rootIgnored = new Set<string>(['.git', '.DS_Store', '.vscode']);
     private anywhereIgnored = new Set<string>([]);
@@ -24,8 +23,6 @@ export class SymbolIndexer {
         private onIndexingComplete?: () => void,
         private onRebuildFullStart?: () => void
     ) {
-        this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-        this.context.subscriptions.push(this.statusBarItem);
     }
 
     public async rebuildIndexFull() {
@@ -52,7 +49,6 @@ export class SymbolIndexer {
         this.queueSet = new Set(files.map(u => u.toString()));
         
         this.isPaused = false;
-        this.statusBarItem.show();
         this.processQueue();
     }
 
@@ -68,10 +64,10 @@ export class SymbolIndexer {
             return [];
         }
 
-        const config = vscode.workspace.getConfiguration('symbolWindow');
-        const includeFiles = config.get<string>('includeFiles', '');
+        const sharedConfig = vscode.workspace.getConfiguration('shared');
+        const includeFiles = sharedConfig.get<string>('includeFiles', '');
         // Default is now handled by package.json settings
-        const excludeFiles = config.get<string>('excludeFiles', '');
+        const excludeFiles = sharedConfig.get<string>('excludeFiles', '');
 
         return new Promise((resolve, reject) => {
             // Use rg --files to list all files respecting .gitignore
@@ -182,8 +178,8 @@ export class SymbolIndexer {
             }
 
             // Get batch size from settings
-            const config = vscode.workspace.getConfiguration('symbolWindow');
-            let batchSize = config.get<number>('indexingBatchSize', 15);
+            const sharedConfig = vscode.workspace.getConfiguration('shared');
+            let batchSize = sharedConfig.get<number>('indexingBatchSize', 15);
 
             // Limit batch size to avoid LSP crash
             const MAX_BATCH_SIZE = 200;
@@ -218,7 +214,6 @@ export class SymbolIndexer {
         }
 
         this.isProcessing = false;
-        this.statusBarItem.hide();
         if (this.queue.length === 0) {
             console.log('[Indexer] Indexing complete.');
             // Notify completion
@@ -300,7 +295,6 @@ export class SymbolIndexer {
 
     private updateStatusBar() {
         const percent = Math.floor((this.processedCount / this.totalToProcess) * 100);
-        this.statusBarItem.text = `$(sync~spin) Indexing Symbols... ${percent}%`;
         if (this.onProgress) {
             this.onProgress(percent);
         }
@@ -369,7 +363,6 @@ export class SymbolIndexer {
             }
 
             this.updateStatusBar();
-            this.statusBarItem.show();
             this.processQueue();
         } else {
             console.log('[Indexer] Index is up to date.');

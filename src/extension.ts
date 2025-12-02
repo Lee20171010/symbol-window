@@ -3,70 +3,30 @@
 import * as vscode from 'vscode';
 import { SymbolController } from './features/symbol/SymbolController';
 import { SymbolWebviewProvider } from './features/symbol/SymbolWebviewProvider';
-import { SymbolDatabase } from './shared/db/database';
-import { SymbolIndexer } from './features/symbol/indexer/indexer';
+import { LspClient } from './shared/core/LspClient';
+import { DatabaseManager } from './shared/core/DatabaseManager';
+import { DisabledWebviewProvider } from './features/placeholder/DisabledWebviewProvider';
 
-let globalDb: SymbolDatabase | undefined;
+let globalDbManager: DatabaseManager | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('Symbol Window is active!');
 
-    let db: SymbolDatabase | undefined;
-    let indexer: SymbolIndexer | undefined;
+    const lspClient = new LspClient();
+    const dbManager = new DatabaseManager(context);
+    globalDbManager = dbManager;
 
-    if (context.storageUri) {
-        const dbPath = vscode.Uri.joinPath(context.storageUri, 'symbols.db').fsPath;
-        console.log('[SymbolWindow] Database path:', dbPath);
-        
-        try {
-            db = new SymbolDatabase(dbPath);
-            db.init();
-            globalDb = db;
-            // We create the controller first so we can pass it to the indexer callback if needed, 
-            // but actually we need to pass indexer to controller.
-            // So we'll use a closure or setup after.
-        } catch (e) {
-            console.error('[SymbolWindow] Failed to initialize database:', e);
-            db = undefined;
-        }
-    }
-
-    const controller = new SymbolController(context, db, undefined); // Pass undefined indexer first
+    const controller = new SymbolController(context, lspClient, dbManager);
     const provider = new SymbolWebviewProvider(context.extensionUri, controller);
+    const disabledProvider = new DisabledWebviewProvider(context.extensionUri);
 
-    const config = vscode.workspace.getConfiguration('symbolWindow');
-    const enableDatabaseMode = config.get<boolean>('enableDatabaseMode', true);
-
-    if (db && enableDatabaseMode) {
-        try {
-            indexer = new SymbolIndexer(context, db, 
-                (percent) => {
-                    controller.updateProgress(percent);
-                },
-                () => {
-                    // onIndexingComplete
-                    controller.setDatabaseReady(true);
-                },
-                () => {
-                    // onRebuildFullStart
-                    controller.setDatabaseReady(false);
-                }
-            );
-
-            // Now inject indexer into controller
-            controller.setIndexer(indexer);
-
-            indexer.startWatching();
-            // Trigger Warm Start
-            indexer.syncIndex();
-            console.log('[SymbolWindow] Database initialized.');
-        } catch (e) {
-            console.error('[SymbolWindow] Failed to start indexer:', e);
-            indexer = undefined;
-        }
-    }	context.subscriptions.push(
+	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(SymbolWebviewProvider.viewType, provider)
 	);
+
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(DisabledWebviewProvider.viewType, disabledProvider)
+    );
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('symbol-window.refresh', () => {
@@ -111,9 +71,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('symbol-window.rebuildIndex', () => {
-            if (indexer) {
+            if (dbManager.indexer) {
                 // Default to Incremental
-                indexer.rebuildIndexIncremental();
+                dbManager.indexer.rebuildIndexIncremental();
             } else {
                 vscode.window.showErrorMessage('Symbol Database is not available.');
             }
@@ -122,8 +82,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('symbol-window.rebuildIndexFull', () => {
-            if (indexer) {
-                indexer.rebuildIndexFull();
+            if (dbManager.indexer) {
+                dbManager.indexer.rebuildIndexFull();
             } else {
                 vscode.window.showErrorMessage('Symbol Database is not available.');
             }
@@ -132,8 +92,8 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-    if (globalDb) {
-        globalDb.close();
+    if (globalDbManager) {
+        globalDbManager.dispose();
         console.log('[SymbolWindow] Database closed.');
     }
 }
