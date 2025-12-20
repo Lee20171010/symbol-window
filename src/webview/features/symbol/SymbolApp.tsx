@@ -1,11 +1,39 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { VSCodeTextField } from '@vscode/webview-ui-toolkit/react';
-import { SymbolItem, SymbolMode, WebviewMessage, Message } from '../shared/types';
-import SymbolTree from './features/symbol/SymbolTree';
-import './style.css';
+import { SymbolItem, SymbolMode, WebviewMessage, Message } from '../../../shared/common/types';
+import SymbolTree from './SymbolTree';
+import FilterView from '../../components/FilterView';
+import { vscode } from '../../vscode-api';
+import { symbolKindNames } from '../../utils';
+import '../../style.css';
 
-// Acquire VS Code API
-const vscode = acquireVsCodeApi();
+const ALL_KINDS = Object.keys(symbolKindNames).map(Number);
+
+const isSameRange = (r1: any, r2: any) => {
+    if (!r1 || !r2) return false;
+    if (Array.isArray(r1) && Array.isArray(r2)) {
+         return r1[0].line === r2[0].line && r1[0].character === r2[0].character &&
+                r1[1].line === r2[1].line && r1[1].character === r2[1].character;
+    }
+    if (r1.start && r2.start) {
+         return r1.start.line === r2.start.line && r1.start.character === r2.start.character &&
+                r1.end.line === r2.end.line && r1.end.character === r2.end.character;
+    }
+    return false;
+};
+
+const findSymbolByRange = (items: SymbolItem[], targetRange: any): SymbolItem | null => {
+    for (const item of items) {
+        if (isSameRange(item.range, targetRange)) {
+            return item;
+        }
+        if (item.children) {
+            const found = findSymbolByRange(item.children, targetRange);
+            if (found) return found;
+        }
+    }
+    return null;
+};
 
 const App: React.FC = () => {
     const savedState = vscode.getState() || {};
@@ -18,26 +46,38 @@ const App: React.FC = () => {
     const [backendStatus, setBackendStatus] = useState<'ready' | 'loading' | 'timeout'>(
         (savedState.mode || 'current') === 'project' ? 'loading' : 'ready'
     );
-    const [enableDeepSearch, setEnableDeepSearch] = useState(false);
+    const [enableHighlighting, setEnableHighlighting] = useState(true);
     const [scopePath, setScopePath] = useState<string | undefined>(undefined);
     const [includePattern, setIncludePattern] = useState(savedState.includePattern || '');
+    const [excludePattern, setExcludePattern] = useState(savedState.excludePattern || '');
     const [showDetails, setShowDetails] = useState(savedState.showDetails || false);
     const [indexingProgress, setIndexingProgress] = useState<number | null>(null);
     const [isDatabaseMode, setIsDatabaseMode] = useState(savedState.isDatabaseMode || false);
+    const [currentFilter, setCurrentFilter] = useState<number[]>(savedState.currentFilter || ALL_KINDS);
+    const [projectFilter, setProjectFilter] = useState<number[]>(savedState.projectFilter || ALL_KINDS);
+    const [showFilterView, setShowFilterView] = useState(false);
+    
+    const searchInputRef = useRef<any>(null);
 
     // Refs for accessing state in event listener
     const modeRef = useRef(mode);
     const queryRef = useRef(query);
     const includePatternRef = useRef(includePattern);
+    const excludePatternRef = useRef(excludePattern);
+    const symbolsRef = useRef(symbols);
+    const projectFilterRef = useRef(projectFilter);
 
     useEffect(() => { modeRef.current = mode; }, [mode]);
     useEffect(() => { queryRef.current = query; }, [query]);
     useEffect(() => { includePatternRef.current = includePattern; }, [includePattern]);
+    useEffect(() => { excludePatternRef.current = excludePattern; }, [excludePattern]);
+    useEffect(() => { symbolsRef.current = symbols; }, [symbols]);
+    useEffect(() => { projectFilterRef.current = projectFilter; }, [projectFilter]);
 
     // Save state
     useEffect(() => {
-        vscode.setState({ mode, query, showDetails, includePattern, isDatabaseMode });
-    }, [mode, query, showDetails, includePattern, isDatabaseMode]);
+        vscode.setState({ mode, query, showDetails, includePattern, excludePattern, isDatabaseMode, currentFilter, projectFilter });
+    }, [mode, query, showDetails, includePattern, excludePattern, isDatabaseMode, currentFilter, projectFilter]);
 
     // Handle messages from extension
     useEffect(() => {
@@ -62,6 +102,8 @@ const App: React.FC = () => {
                         setSymbols([]);
                         // Don't auto-set status here, rely on backend 'status' message
                     }
+                    // If lockedMode is provided, we might want to store it or use it to hide UI elements
+                    // But currently we rely on 'mode' being correct.
                     break;
                 case 'status':
                     setBackendStatus(message.status);
@@ -69,15 +111,32 @@ const App: React.FC = () => {
                 case 'setQuery':
                     setQuery(message.query);
                     break;
+                case 'setFilters':
+                    // If backend sends filters (e.g. from workspaceState), update state
+                    // But only if we don't have local changes? 
+                    // Actually, backend is the source of truth for workspace persistence.
+                    // If savedState is empty (first load), we might rely on this.
+                    if (message.currentFilter) {
+                        setCurrentFilter(message.currentFilter);
+                    }
+                    if (message.projectFilter) {
+                        setProjectFilter(message.projectFilter);
+                    }
+                    break;
                 case 'setSettings':
-                    if (message.settings?.enableDeepSearch !== undefined) {
-                        setEnableDeepSearch(message.settings.enableDeepSearch);
+                    if (message.settings?.enableHighlighting !== undefined) {
+                        setEnableHighlighting(message.settings.enableHighlighting);
                     }
                     break;
                 case 'refresh':
                     if (modeRef.current === 'project') {
                         // Re-trigger search with current query
-                        vscode.postMessage({ command: 'search', query: queryRef.current, includePattern: includePatternRef.current });
+                        vscode.postMessage({ 
+                            command: 'search', 
+                            query: queryRef.current, 
+                            includePattern: includePatternRef.current,
+                            excludePattern: excludePatternRef.current
+                        });
                     }
                     break;
                 case 'highlight':
@@ -111,6 +170,26 @@ const App: React.FC = () => {
                     }
                     setIsSearching(false);
                     break;
+                case 'selectSymbol':
+                    // @ts-ignore
+                    const targetRange = message.range;
+                    const found = findSymbolByRange(symbolsRef.current, targetRange);
+                    if (found) {
+                        setSelectedSymbol(found);
+                    }
+                    break;
+                case 'focusInput':
+                    // Use setTimeout to ensure the DOM is ready or to break the call stack
+                    setTimeout(() => {
+                        if (searchInputRef.current) {
+                            // VSCodeTextField exposes the underlying input via shadowRoot or similar, 
+                            // but usually focusing the component itself works if it delegates focus.
+                            // However, web components can be tricky.
+                            // Let's try calling focus() on the ref.
+                            searchInputRef.current.focus();
+                        }
+                    }, 0);
+                    break;
             }
         };
 
@@ -131,7 +210,13 @@ const App: React.FC = () => {
             // Debounce is handled in backend or here? 
             // Spec says "Triggered only when the user types".
             // Let's send every keystroke and let backend debounce.
-            vscode.postMessage({ command: 'search', query: newQuery, includePattern: includePatternRef.current });
+            vscode.postMessage({ 
+                command: 'search', 
+                query: newQuery, 
+                includePattern: includePatternRef.current,
+                excludePattern: excludePatternRef.current,
+                kinds: projectFilterRef.current
+            });
         }
     };
 
@@ -140,7 +225,28 @@ const App: React.FC = () => {
         setIncludePattern(newPattern);
         
         if (mode === 'project' && query) {
-            vscode.postMessage({ command: 'search', query: query, includePattern: newPattern });
+            vscode.postMessage({ 
+                command: 'search', 
+                query: query, 
+                includePattern: newPattern,
+                excludePattern: excludePatternRef.current,
+                kinds: projectFilterRef.current
+            });
+        }
+    };
+
+    const handleExcludePatternChange = (e: any) => {
+        const newPattern = e.target.value;
+        setExcludePattern(newPattern);
+        
+        if (mode === 'project' && query) {
+            vscode.postMessage({ 
+                command: 'search', 
+                query: query, 
+                includePattern: includePatternRef.current,
+                excludePattern: newPattern,
+                kinds: projectFilterRef.current
+            });
         }
     };
 
@@ -149,23 +255,98 @@ const App: React.FC = () => {
             e.preventDefault();
             setIncludePattern('');
             if (mode === 'project' && query) {
-                vscode.postMessage({ command: 'search', query: query, includePattern: '' });
+                vscode.postMessage({ 
+                    command: 'search', 
+                    query: query, 
+                    includePattern: '',
+                    excludePattern: excludePatternRef.current,
+                    kinds: projectFilterRef.current
+                });
+            }
+        }
+    };
+
+    const handleExcludePatternKeyDown = (e: any) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setExcludePattern('');
+            if (mode === 'project' && query) {
+                vscode.postMessage({ 
+                    command: 'search', 
+                    query: query, 
+                    includePattern: includePatternRef.current,
+                    excludePattern: '',
+                    kinds: projectFilterRef.current
+                });
+            }
+        }
+    };
+
+    const handleFilterApply = (newSelection: number[]) => {
+        setShowFilterView(false);
+        
+        // Save to workspace state via extension
+        // We send both filters to keep them in sync
+        const nextCurrent = mode === 'current' ? newSelection : currentFilter;
+        const nextProject = mode === 'project' ? newSelection : projectFilter;
+        
+        vscode.postMessage({ 
+            command: 'saveFilters', 
+            currentFilter: nextCurrent,
+            projectFilter: nextProject
+        });
+
+        if (mode === 'current') {
+            setCurrentFilter(newSelection);
+        } else {
+            setProjectFilter(newSelection);
+            // Trigger search immediately for project mode
+            if (query) {
+                vscode.postMessage({ 
+                    command: 'search', 
+                    query: query, 
+                    includePattern: includePattern,
+                    excludePattern: excludePattern,
+                    kinds: newSelection
+                });
             }
         }
     };
 
     // Handle jump
     const handleJump = (symbol: SymbolItem) => {
+        // For current mode, double click selects the full range (start to end)
+        // For project mode, double click jumps to selectionRange (the name)
+        const range = mode === 'current' ? symbol.range : symbol.selectionRange;
+        
         vscode.postMessage({ 
             command: 'jump', 
             uri: symbol.uri, 
-            range: symbol.selectionRange 
+            range: range 
         });
     };
 
     // Handle selection
     const handleSelect = (symbol: SymbolItem) => {
         setSelectedSymbol(symbol);
+        
+        // Send preview command for Context Window
+        if (symbol.uri && symbol.selectionRange) {
+            vscode.postMessage({ 
+                command: 'preview', 
+                uri: symbol.uri, 
+                range: symbol.selectionRange 
+            });
+        }
+
+        if (mode === 'current') {
+            // Single click in current mode: jump to selectionRange (name)
+            vscode.postMessage({ 
+                command: 'jump', 
+                uri: symbol.uri, 
+                range: symbol.selectionRange 
+            });
+        }
     };
 
     // Handle keyboard navigation
@@ -227,7 +408,44 @@ const App: React.FC = () => {
             return symbols; // Backend handles filtering
         }
         
-        if (!query) return symbols;
+        // Filter by Kind first (if any filter is set)
+        let filteredSymbols = symbols;
+        
+        // If filter is empty, show NOTHING (Scheme B)
+        if (currentFilter.length === 0) {
+            return [];
+        }
+
+        // If filter is NOT full (some unchecked), apply filter
+        if (currentFilter.length < ALL_KINDS.length) {
+            const filterByKind = (items: SymbolItem[]): SymbolItem[] => {
+                const result: SymbolItem[] = [];
+                for (const item of items) {
+                    // Check if item matches kind
+                    const match = currentFilter.includes(item.kind);
+                    
+                    // Process children
+                    const filteredChildren = item.children ? filterByKind(item.children) : [];
+                    
+                    if (match) {
+                        result.push({
+                            ...item,
+                            children: filteredChildren
+                        });
+                    } else if (filteredChildren.length > 0) {
+                        // If parent doesn't match but child does, keep parent to show child
+                        result.push({
+                            ...item,
+                            children: filteredChildren
+                        });
+                    }
+                }
+                return result;
+            };
+            filteredSymbols = filterByKind(symbols);
+        }
+
+        if (!query) return filteredSymbols;
 
         const lowerQuery = query.toLowerCase();
         const keywords = lowerQuery.split(/\s+/).filter((k: string) => k.length > 0);
@@ -261,8 +479,8 @@ const App: React.FC = () => {
             return result;
         };
 
-        return filterTree(symbols);
-    }, [symbols, query, mode]);
+        return filterTree(filteredSymbols);
+    }, [symbols, query, mode, currentFilter]);
 
     // Auto-load more if content doesn't fill container
     useEffect(() => {
@@ -286,19 +504,24 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className={`container mode-${mode} ${indexingProgress !== null ? 'has-progress' : ''}`}>
-            {indexingProgress !== null && (
-                <div className="indexing-progress-container">
-                    <div className="indexing-label">
-                        <span className="codicon codicon-sync codicon-modifier-spin"></span>
-                        <span>Indexing Symbols... {indexingProgress}%</span>
-                    </div>
-                    <div className="indexing-progress">
-                        {/* eslint-disable-next-line react/forbid-dom-props */}
-                        <div className="indexing-progress-bar" style={{ width: `${indexingProgress}%` }} />
-                    </div>
+        <div className={`container mode-${mode}`}>
+            <div className={`indexing-progress-container ${indexingProgress !== null ? 'visible' : ''}`}>
+                <div className="indexing-label">
+                    <span className="codicon codicon-sync codicon-modifier-spin"></span>
+                    <span>Indexing Symbols... {indexingProgress || 0}%</span>
+                </div>
+                <div className="indexing-progress">
+                    {/* eslint-disable-next-line react/forbid-dom-props */}
+                    <div className="indexing-progress-bar" style={{ width: `${indexingProgress || 0}%` }} />
+                </div>
+            </div>
+            
+            {isSearching && (
+                <div className="progress-bar-container">
+                    <div className="progress-bar"></div>
                 </div>
             )}
+
             <div className="search-container">
                 <div className="mode-indicator">
                     {mode === 'current' ? 'Current Document' : (isDatabaseMode ? 'Project Workspace (Database)' : 'Project Workspace')}
@@ -323,6 +546,7 @@ const App: React.FC = () => {
                     </div>
                 )}
                 <VSCodeTextField 
+                    ref={searchInputRef}
                     placeholder={mode === 'current' ? "Filter symbols..." : "Search workspace..."}
                     value={query}
                     onInput={handleSearch}
@@ -330,7 +554,14 @@ const App: React.FC = () => {
                     disabled={backendStatus === 'loading' || backendStatus === 'timeout'}
                 >
                     <span slot="start" className="codicon codicon-search"></span>
-                    {mode === 'project' && enableDeepSearch && !isDatabaseMode && (
+                    <span 
+                        slot="end" 
+                        className={`codicon codicon-filter ${((mode === 'current' && currentFilter.length < ALL_KINDS.length) || (mode === 'project' && projectFilter.length < ALL_KINDS.length)) ? 'active' : ''}`}
+                        onClick={() => setShowFilterView(true)}
+                        title="Filter by Kind"
+                        style={{ marginRight: '4px', cursor: 'pointer' }}
+                    ></span>
+                    {mode === 'project' && !isDatabaseMode && (
                         <span 
                             slot="end" 
                             className={`codicon codicon-kebab-vertical ${showDetails ? 'active' : ''}`}
@@ -340,7 +571,7 @@ const App: React.FC = () => {
                     )}
                 </VSCodeTextField>
                 
-                {mode === 'project' && enableDeepSearch && !isDatabaseMode && showDetails && (
+                {mode === 'project' && !isDatabaseMode && showDetails && (
                     <div className="search-details">
                         <div className="scope-control">
                             <span className="label">Scope:</span>
@@ -372,11 +603,22 @@ const App: React.FC = () => {
                                 <span slot="start" className="codicon codicon-files"></span>
                             </VSCodeTextField>
                         </div>
+                        <div className="include-pattern-container">
+                            <span className="label">files to exclude</span>
+                            <VSCodeTextField 
+                                placeholder="e.g. *.ts, src/**/exclude"
+                                value={excludePattern}
+                                onInput={handleExcludePatternChange}
+                                onKeyDown={handleExcludePatternKeyDown}
+                                className="include-pattern-input"
+                            >
+                                <span slot="start" className="codicon codicon-files"></span>
+                            </VSCodeTextField>
+                        </div>
                     </div>
                 )}
             </div>
             <div className="tree-container" onScroll={handleScroll}>
-                {isSearching && <div className="loading-indicator">Searching...</div>}
                 {!isSearching && displaySymbols.length === 0 && query.length > 0 && (
                     <div className="no-results">No results found</div>
                 )}
@@ -386,8 +628,17 @@ const App: React.FC = () => {
                     onSelect={handleSelect}
                     selectedSymbol={selectedSymbol}
                     defaultExpanded={mode === 'current' ? !!query : false}
+                    query={enableHighlighting ? query : undefined}
                 />
             </div>
+            
+            {showFilterView && (
+                <FilterView 
+                    initialSelection={mode === 'current' ? currentFilter : projectFilter}
+                    onApply={handleFilterApply}
+                    onCancel={() => setShowFilterView(false)}
+                />
+            )}
         </div>
     );
 };

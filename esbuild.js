@@ -49,16 +49,18 @@ async function main() {
 	});
 
 	const webviewCtx = await esbuild.context({
-		entryPoints: [
-			'src/webview/index.tsx'
-		],
+		entryPoints: {
+			'webview-symbol': 'src/webview/features/symbol/index.tsx',
+			'webview-relation': 'src/webview/features/relation/index.tsx',
+			'webview-reference': 'src/webview/features/reference/index.tsx'
+		},
 		bundle: true,
 		format: 'iife',
 		minify: production,
 		sourcemap: !production,
 		sourcesContent: false,
 		platform: 'browser',
-		outfile: 'dist/webview.js',
+		outdir: 'dist',
 		logLevel: 'silent',
 		plugins: [
 			esbuildProblemMatcherPlugin,

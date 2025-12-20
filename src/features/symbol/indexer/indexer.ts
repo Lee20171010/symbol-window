@@ -16,6 +16,13 @@ export class SymbolIndexer {
     private rootIgnored = new Set<string>(['.git', '.DS_Store', '.vscode']);
     private anywhereIgnored = new Set<string>([]);
 
+    private debounceTimer: NodeJS.Timeout | undefined;
+    private readonly DEBOUNCE_DELAY = 2000; // 2 seconds
+
+    // Retry mechanism
+    private retryCounts = new Map<string, number>();
+    private readonly MAX_RETRIES = 3;
+
     constructor(
         private context: vscode.ExtensionContext, 
         private db: SymbolDatabase,
@@ -26,7 +33,7 @@ export class SymbolIndexer {
     }
 
     public async rebuildIndexFull() {
-        console.log('[Indexer] Rebuilding index (Full)...');
+        console.log('[Source Window] Rebuilding index (Full)...');
         
         // Notify start of full rebuild (set ready=false)
         if (this.onRebuildFullStart) {
@@ -36,6 +43,7 @@ export class SymbolIndexer {
         this.isPaused = true; // Pause current processing
         this.queue = []; // Clear queue
         this.queueSet.clear();
+        this.retryCounts.clear();
         this.processedCount = 0;
         this.totalToProcess = 0;
         
@@ -53,7 +61,7 @@ export class SymbolIndexer {
     }
 
     public async rebuildIndexIncremental() {
-        console.log('[Indexer] Rebuilding index (Incremental)...');
+        console.log('[Source Window] Rebuilding index (Incremental)...');
         // Just trigger syncIndex, which does the diffing
         await this.syncIndex();
     }
@@ -109,13 +117,13 @@ export class SymbolIndexer {
                     });
                     resolve(uris);
                 } else {
-                    console.error(`[Indexer] rg --files failed with code ${code}`);
+                    console.error(`[Source Window] rg --files failed with code ${code}`);
                     resolve([]); // Fallback to empty or maybe throw?
                 }
             });
 
             child.on('error', (err) => {
-                console.error('[Indexer] Failed to spawn rg:', err);
+                console.error('[Source Window] Failed to spawn rg:', err);
                 resolve([]);
             });
         });
@@ -129,7 +137,7 @@ export class SymbolIndexer {
             this.queue.push(uri);
             this.totalToProcess++;
             this.updateStatusBar();
-            this.processQueue();
+            this.scheduleDebounce();
         }
     }
 
@@ -147,23 +155,27 @@ export class SymbolIndexer {
         const watcher = vscode.workspace.createFileSystemWatcher('**/*');
         this.context.subscriptions.push(watcher);
         
-        watcher.onDidCreate(uri => {
+        const handleFileChange = (uri: vscode.Uri) => {
             if (this.shouldIgnore(uri)) { return; }
-            console.log('[Indexer] File created:', uri.fsPath);
+            // console.log(`[Source Window] File change detected:`, uri.fsPath);
             this.addToQueue(uri);
-        });
+        };
 
-        watcher.onDidChange(uri => {
-            if (this.shouldIgnore(uri)) { return; }
-            console.log('[Indexer] File changed:', uri.fsPath);
-            this.addToQueue(uri);
-        });
-        
+        watcher.onDidCreate(handleFileChange);
+        watcher.onDidChange(handleFileChange);
         watcher.onDidDelete(uri => {
             if (this.shouldIgnore(uri)) { return; }
-            console.log('[Indexer] File deleted:', uri.fsPath);
             this.db.deleteFile(uri.fsPath);
         });
+    }
+
+    private scheduleDebounce() {
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+        }
+        this.debounceTimer = setTimeout(() => {
+            this.processQueue();
+        }, this.DEBOUNCE_DELAY);
     }
 
     private async processQueue() {
@@ -198,7 +210,14 @@ export class SymbolIndexer {
 
             if (validBatch.length > 0) {
                 await Promise.all(validBatch.map(uri => this.indexFile(uri)));
-                this.processedCount += validBatch.length; // Count valid ones
+                // Note: indexFile might re-queue items on failure.
+                // We count them as processed for this batch to keep progress moving forward visually,
+                // even if they are re-added to the end of the queue.
+                // If we don't count them, the progress bar might stall.
+                // But if we re-queue, totalToProcess should ideally increase? 
+                // No, totalToProcess is fixed based on initial scan.
+                // If we re-queue, we are just delaying completion.
+                this.processedCount += validBatch.length; 
             }
             
             // We also count ignored ones as "processed" for the progress bar
@@ -215,7 +234,7 @@ export class SymbolIndexer {
 
         this.isProcessing = false;
         if (this.queue.length === 0) {
-            console.log('[Indexer] Indexing complete.');
+            console.log(`[Source Window] Indexing complete. Processed ${this.processedCount} files.`);
             // Notify completion
             if (this.onIndexingComplete) {
                 this.onIndexingComplete();
@@ -224,8 +243,12 @@ export class SymbolIndexer {
             if (this.onProgress) {
                 this.onProgress(100);
             }
+            
+            // Reset counters for the next incremental batch
+            this.processedCount = 0;
+            this.totalToProcess = 0;
         } else {
-            console.log('[Indexer] Indexing paused.');
+            console.log('[Source Window] Indexing paused.');
         }
     }
 
@@ -241,13 +264,63 @@ export class SymbolIndexer {
                 return;
             }
 
+            // Check DB mtime to avoid unnecessary LSP calls
+            const dbMtime = this.db.getFileMtime(uri.fsPath);
+            // Allow small time difference (e.g. 100ms) or exact match?
+            // Usually exact match is fine for integers.
+            // But let's be safe: if dbMtime >= stat.mtime, we skip.
+            // Note: stat.mtime is usually in milliseconds.
+            if (dbMtime !== undefined && dbMtime >= stat.mtime) {
+                // console.log(`[Source Window] Skipping ${uri.fsPath} (mtime match)`);
+                return;
+            }
+
             // 1. Get Symbols
             // We use executeDocumentSymbolProvider. 
             // Note: This might open the document in the background.
-            const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+            // Add timeout to prevent hanging
+            const symbolsPromise = vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
                 'vscode.executeDocumentSymbolProvider',
                 uri
             );
+
+            const timeoutPromise = new Promise<vscode.DocumentSymbol[]>((_, reject) => {
+                setTimeout(() => reject(new Error('Timeout')), 5000); // 5s timeout
+            });
+
+            let symbols: vscode.DocumentSymbol[] | undefined;
+            try {
+                symbols = await Promise.race([symbolsPromise, timeoutPromise]);
+            } catch (e) {
+                // Timeout or error
+                const key = uri.toString();
+                const retries = this.retryCounts.get(key) || 0;
+                
+                if (retries < this.MAX_RETRIES) {
+                    // Re-queue
+                    this.retryCounts.set(key, retries + 1);
+                    this.queue.push(uri);
+                    this.queueSet.add(key);
+                    // Don't increment totalToProcess as it's already counted
+                    // But we need to ensure processedCount isn't incremented for this failure
+                    // The caller (processQueue) increments processedCount based on validBatch.
+                    // We need to signal failure here so caller doesn't count it?
+                    // Actually processQueue calls indexFile inside Promise.all.
+                    // If indexFile returns, it's considered "done".
+                    // So we should probably NOT re-queue here, but return a status?
+                    // Or just re-queue and let it be processed again later.
+                    // If we re-queue, queue.length increases.
+                    // processQueue loop continues until queue is empty.
+                    // So eventually it will be picked up again.
+                    // console.log(`[Source Window] Retry ${retries + 1} for ${uri.fsPath}`);
+                } else {
+                    console.warn(`[Source Window] Failed to index ${uri.fsPath} after ${this.MAX_RETRIES} retries.`);
+                }
+                return;
+            }
+
+            // Success - clear retry count
+            this.retryCounts.delete(uri.toString());
 
             // Even if symbols is empty, we should record the file in DB to track mtime
             // and avoid re-indexing it on every sync.
@@ -260,7 +333,7 @@ export class SymbolIndexer {
             this.db.insertFileAndSymbols(uri.fsPath, mtime, flatSymbols);
 
         } catch (error) {
-            console.error(`[Indexer] Failed to index ${uri.fsPath}:`, error);
+            console.error(`[Source Window] Failed to index ${uri.fsPath}:`, error);
         }
     }
 
@@ -301,7 +374,7 @@ export class SymbolIndexer {
     }
 
     public async syncIndex() {
-        console.log('[Indexer] Starting Warm Start Sync...');
+        console.log('[Source Window] Starting Warm Start Sync...');
         
         // 1. Get all files in workspace using Ripgrep
         const workspaceFiles = await this.findAllFiles();
@@ -351,7 +424,14 @@ export class SymbolIndexer {
         }
 
         if (toIndex.length > 0) {
-            console.log(`[Indexer] Found ${toIndex.length} files to update.`);
+            console.log(`[Source Window] Found ${toIndex.length} files to update.`);
+            
+            // If idle, reset counters for a fresh progress view
+            if (this.queue.length === 0 && !this.isProcessing) {
+                this.processedCount = 0;
+                this.totalToProcess = 0;
+            }
+
             this.totalToProcess += toIndex.length;
             
             for (const uri of toIndex) {
@@ -365,7 +445,7 @@ export class SymbolIndexer {
             this.updateStatusBar();
             this.processQueue();
         } else {
-            console.log('[Indexer] Index is up to date.');
+            console.log('[Source Window] Index is up to date.');
             if (this.onIndexingComplete) {
                 this.onIndexingComplete();
             }
@@ -379,12 +459,12 @@ export class SymbolIndexer {
     public pause() {
         this.isPaused = true;
         this.isProcessing = false;
-        console.log('[Indexer] Paused.');
+        console.log('[Source Window] Paused.');
     }
 
     public resume() {
         if (this.isPaused) {
-            console.log('[Indexer] Resumed.');
+            console.log('[Source Window] Resumed.');
             this.isPaused = false;
             this.processQueue();
         }
@@ -521,9 +601,9 @@ export class SymbolIndexer {
                     this.anywhereIgnored.add(line);
                 }
             }
-            console.log('[Indexer] Loaded .gitignore patterns for fast path filtering.');
+            console.log('[Source Window] Loaded .gitignore patterns for fast path filtering.');
         } catch (e) {
-            console.error('[Indexer] Failed to load .gitignore:', e);
+            console.error('[Source Window] Failed to load .gitignore:', e);
         }
     }
 }

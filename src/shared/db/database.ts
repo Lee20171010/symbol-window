@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { SymbolKind } from 'vscode';
 
 let DatabaseSync: any;
@@ -7,7 +8,7 @@ try {
     // @ts-ignore
     DatabaseSync = require('node:sqlite').DatabaseSync;
 } catch (e) {
-    console.warn('node:sqlite not available');
+    console.warn('[Source Window] node:sqlite not available');
 }
 
 export interface FileRecord {
@@ -58,13 +59,20 @@ export class SymbolDatabase {
         // Enable WAL for performance
         this.db.exec('PRAGMA journal_mode = WAL;');
         this.db.exec('PRAGMA synchronous = NORMAL;');
+        
+        // Configure Cache Size
+        const config = vscode.workspace.getConfiguration('shared.database');
+        const cacheSizeMB = config.get<number>('cacheSizeMB', 64);
+        // Negative value means KB. 1MB = 1024KB.
+        const cacheSizeKB = -(cacheSizeMB * 1024);
+        this.db.exec(`PRAGMA cache_size = ${cacheSizeKB};`);
 
         // Check Schema Version
         const versionResult = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
         const currentVersion = versionResult.user_version;
 
         if (currentVersion !== this.SCHEMA_VERSION) {
-            console.log(`[SymbolDatabase] Schema version mismatch (DB: ${currentVersion}, App: ${this.SCHEMA_VERSION}). Rebuilding DB.`);
+            console.log(`[Source Window] [SymbolDatabase] Schema version mismatch (DB: ${currentVersion}, App: ${this.SCHEMA_VERSION}). Rebuilding DB.`);
             this.db.close();
             if (fs.existsSync(this.storagePath)) {
                 fs.unlinkSync(this.storagePath);
@@ -213,7 +221,7 @@ export class SymbolDatabase {
         return map;
     }
 
-    public search(query: string, limit: number, offset: number): SymbolRecord[] {
+    public search(query: string, limit: number, offset: number, kinds?: number[]): SymbolRecord[] {
         if (!this.db) { throw new Error('DB not initialized'); }
 
         // Split query into tokens
@@ -233,19 +241,49 @@ export class SymbolDatabase {
             params.push(likePattern, likePattern);
         }
 
+        // Only apply kind filter if kinds are provided AND not all kinds are selected (optimization)
+        // Assuming caller handles the "all selected" check, but we can also check length here if we knew total count.
+        // However, the caller (Controller) should pass undefined or empty kinds if no filtering is needed?
+        // Actually, based on Scheme B:
+        // - Empty kinds [] => Show nothing (handled in Controller)
+        // - Full kinds => Show all (Controller should pass undefined or we check length)
+        // - Partial kinds => Filter
+        
+        if (kinds && kinds.length > 0) {
+            const placeholders = kinds.map(() => '?').join(',');
+            conditions.push(`kind IN (${placeholders})`);
+            params.push(...kinds);
+        }
+
         const sql = `
             SELECT s.*, f.path as file_path 
             FROM symbols s
             JOIN files f ON s.file_id = f.id
             WHERE ${conditions.join(' AND ')}
-            ORDER BY s.name ASC, f.path ASC
+            ORDER BY 
+                CASE WHEN s.name LIKE ? THEN 0 ELSE 1 END,
+                CASE WHEN s.name LIKE ? THEN 0 ELSE 1 END,
+                LENGTH(s.name) ASC,
+                s.name ASC, 
+                f.path ASC
             LIMIT ? OFFSET ?
         `;
 
+        // Add query for the exact match check in ORDER BY
+        params.push(query);
+        // Add query for the name contains check in ORDER BY (using the first token as heuristic)
+        params.push(`%${tokens[0]}%`);
         params.push(limit, offset);
 
         const stmt = this.db.prepare(sql);
         return stmt.all(...params) as SymbolRecord[];
+    }
+
+    public getFileMtime(path: string): number | undefined {
+        if (!this.db) { return undefined; }
+        const stmt = this.db.prepare('SELECT mtime FROM files WHERE path = ?');
+        const row = stmt.get(path) as { mtime: number } | undefined;
+        return row?.mtime;
     }
 
     public getFileCount(): number {
@@ -259,5 +297,92 @@ export class SymbolDatabase {
         this.db.exec('DELETE FROM symbols;');
         this.db.exec('DELETE FROM files;');
         // Vacuum to reclaim space? Maybe overkill for now.
+    }
+
+    public findEnclosingSymbol(filePath: string, line: number): SymbolRecord | undefined {
+        if (!this.db) { return undefined; }
+        
+        // Find file_id
+        const fileStmt = this.db.prepare('SELECT id FROM files WHERE path = ?');
+        const fileRow = fileStmt.get(filePath) as { id: number } | undefined;
+        if (!fileRow) {
+            return undefined;
+        }
+
+        const sql = `
+            SELECT * FROM symbols 
+            WHERE file_id = ? 
+            AND range_start_line <= ? 
+            AND range_end_line >= ?
+            ORDER BY (range_end_line - range_start_line) ASC
+            LIMIT 1
+        `;
+        
+        const stmt = this.db.prepare(sql);
+        const row = stmt.get(fileRow.id, line, line) as SymbolRecord | undefined;
+        if (row) {
+            row.file_path = filePath;
+        }
+        return row;
+    }
+
+    public findSymbolsByNames(names: string[]): SymbolRecord[] {
+        if (!this.db || names.length === 0) { return []; }
+        
+        // Use OR LIKE for prefix matching
+        // WHERE (name LIKE ? OR name LIKE ?)
+        const conditions: string[] = [];
+        const params: string[] = [];
+
+        for (const name of names) {
+            conditions.push('name LIKE ?');
+            params.push(name + '%');
+        }
+
+        const sql = `
+            SELECT s.*, f.path as file_path 
+            FROM symbols s
+            JOIN files f ON s.file_id = f.id
+            WHERE ${conditions.join(' OR ')}
+        `;
+        
+        const stmt = this.db.prepare(sql);
+        return stmt.all(...params) as SymbolRecord[];
+    }
+
+    public findSymbolExact(name: string): SymbolRecord | undefined {
+        if (!this.db) { return undefined; }
+        const sql = `
+            SELECT s.*, f.path as file_path 
+            FROM symbols s
+            JOIN files f ON s.file_id = f.id
+            WHERE s.name = ?
+            LIMIT 1
+        `;
+        const stmt = this.db.prepare(sql);
+        return stmt.get(name) as SymbolRecord | undefined;
+    }
+
+    public getSymbolsForFile(filePath: string): SymbolRecord[] {
+        if (!this.db) { return []; }
+        
+        const fileStmt = this.db.prepare('SELECT id FROM files WHERE path = ?');
+        const fileRow = fileStmt.get(filePath) as { id: number } | undefined;
+        if (!fileRow) {
+            return [];
+        }
+
+        const sql = `
+            SELECT * FROM symbols 
+            WHERE file_id = ?
+            ORDER BY range_start_line ASC
+        `;
+        const stmt = this.db.prepare(sql);
+        const rows = stmt.all(fileRow.id) as SymbolRecord[];
+        // Inject file_path for consistency
+        for (const row of rows) {
+            row.file_path = filePath;
+        }
+        return rows;
     }
 }

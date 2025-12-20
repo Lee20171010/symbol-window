@@ -1,6 +1,6 @@
 {
   "name": "symbol-relation-window",
-  "displayName": "Symbol Window",
+  "displayName": "Symbol & Relation Window",
   "description": "Source Insight-like symbol navigation and workspace search.",
   "version": "0.1.2",
   "publisher": "ytlee",
@@ -11,18 +11,19 @@
   },
   "activationEvents": [
     "onView:symbol-window-view",
+    "onView:symbol-window-project-view",
     "onView:relation-window-view"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Lee20171010/symbol-window"
+    "url": "https://github.com/Lee20171010/symbol-relation-window"
   },
   "bugs": {
-    "url": "https://github.com/Lee20171010/symbol-window/issues"
+    "url": "https://github.com/Lee20171010/symbol-relation-window/issues"
   },
-  "homepage": "https://github.com/Lee20171010/symbol-window#readme",
+  "homepage": "https://github.com/Lee20171010/symbol-relation-window#readme",
   "engines": {
-    "vscode": "^1.106.1"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Programming Languages",
@@ -45,19 +46,25 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "symbol-window-container",
+          "id": "symbol-relation-window-container",
           "title": "Window",
           "icon": "$(symbol-structure)"
         }
       ]
     },
     "views": {
-      "symbol-window-container": [
+      "symbol-relation-window-container": [
         {
           "type": "webview",
           "id": "symbol-window-view",
           "name": "Symbol Window",
           "when": "config.symbolWindow.enable"
+        },
+        {
+          "type": "webview",
+          "id": "symbol-window-project-view",
+          "name": "Project Symbols",
+          "when": "config.symbolWindow.enable && config.symbolWindow.splitView"
         },
         {
           "type": "webview",
@@ -87,14 +94,18 @@
         "icon": "$(arrow-swap)"
       },
       {
-        "command": "symbol-window.deepSearch",
-        "title": "Deep Search",
-        "category": "Symbol Window",
-        "icon": "$(search-fuzzy)"
+        "command": "symbol-window.focusProjectSearch",
+        "title": "Focus Project Window Search",
+        "category": "Symbol Window"
       },
       {
-        "command": "symbol-window.deepSearchDisabled",
-        "title": "Deep Search (Disabled - Enable in Settings)",
+        "command": "symbol-window.focusCurrentSearch",
+        "title": "Focus Current Window Search",
+        "category": "Symbol Window"
+      },
+      {
+        "command": "symbol-window.deepSearch",
+        "title": "Deep Search",
         "category": "Symbol Window",
         "icon": "$(search-fuzzy)"
       },
@@ -117,23 +128,91 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "relation-window.manualSearch",
+        "title": "Search",
+        "category": "Relation Window",
+        "icon": "$(search)"
+      },
+      {
         "command": "relation-window.toggleDirection",
         "title": "Toggle Direction (Callers/Callees)",
         "category": "Relation Window",
         "icon": "$(arrow-swap)"
       },
       {
-        "command": "relation-window.deepSearch",
-        "title": "Deep Search",
+        "command": "relation-window.lookupReference",
+        "title": "Lookup References",
         "category": "Relation Window",
-        "icon": "$(search-fuzzy)"
+        "icon": "$(references)"
+      },
+      {
+        "command": "reference-window.next",
+        "title": "Next Reference",
+        "category": "Reference Window",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "reference-window.prev",
+        "title": "Previous Reference",
+        "category": "Reference Window",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "relation-window.jumpToDefinition",
+        "title": "Jump to Definition",
+        "category": "Relation Window"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "reference-window.next",
+        "key": "f2",
+        "when": "reference-window.hasResults && referenceWindow.exists"
+      },
+      {
+        "command": "reference-window.prev",
+        "key": "f1",
+        "when": "reference-window.hasResults && referenceWindow.exists"
+      },
+      {
+        "command": "symbol-window.focusProjectSearch",
+        "key": "ctrl+t",
+        "when": "config.symbolWindow.enable"
+      },
+      {
+        "command": "symbol-window.focusCurrentSearch",
+        "key": "ctrl+shift+o",
+        "when": "config.symbolWindow.enable"
+      },
+      {
+        "command": "relation-window.lookupReference",
+        "key": "shift+alt+f12",
+        "when": "config.referenceWindow.enable"
+      },
+      {
+        "command": "relation-window.manualSearch",
+        "key": "shift+alt+h",
+        "when": "config.relationWindow.enable"
       }
     ],
     "menus": {
+      "webview/context": [
+        {
+          "command": "relation-window.jumpToDefinition",
+          "when": "webviewId == relation-window-view && hasTarget"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "relation-window.lookupReference",
+          "group": "navigation",
+          "when": "config.referenceWindow.enable"
+        }
+      ],
       "view/title": [
         {
           "command": "symbol-window.toggleMode",
-          "when": "view == symbol-window-view",
+          "when": "view == symbol-window-view && !config.symbolWindow.splitView",
           "group": "navigation"
         },
         {
@@ -142,89 +221,164 @@
           "group": "navigation"
         },
         {
-          "command": "symbol-window.deepSearch",
-          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && config.symbolWindow.enableDeepSearch && !symbolWindow.databaseReady",
+          "command": "symbol-window.refresh",
+          "when": "view == symbol-window-project-view",
           "group": "navigation"
         },
         {
-          "command": "symbol-window.deepSearchDisabled",
-          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && !config.symbolWindow.enableDeepSearch && !symbolWindow.databaseReady",
+          "command": "symbol-window.deepSearch",
+          "when": "view == symbol-window-view && symbolWindow.mode == 'project' && !symbolWindow.databaseReady && !config.symbolWindow.splitView",
+          "group": "navigation"
+        },
+        {
+          "command": "symbol-window.deepSearch",
+          "when": "view == symbol-window-project-view && !symbolWindow.databaseReady",
           "group": "navigation"
         },
         {
           "command": "relation-window.toggleDirection",
-          "when": "view == relation-window-view",
-          "group": "navigation"
+          "when": "view == relation-window-view && !config.relationWindow.showBothDirections",
+          "group": "navigation@5"
         },
         {
           "command": "relation-window.refresh",
-          "when": "view == relation-window-view",
-          "group": "navigation"
+          "when": "view == relation-window-view && config.relationWindow.autoSearch",
+          "group": "navigation@2"
         },
         {
-          "command": "relation-window.deepSearch",
-          "when": "view == relation-window-view && config.relationWindow.enableDeepSearch",
-          "group": "navigation"
+          "command": "relation-window.manualSearch",
+          "when": "view == relation-window-view && !config.relationWindow.autoSearch",
+          "group": "navigation@4"
+        },
+        {
+          "command": "reference-window.prev",
+          "when": "view == relation-window-view && config.referenceWindow.enable",
+          "group": "navigation@1"
+        },
+        {
+          "command": "reference-window.next",
+          "when": "view == relation-window-view && config.referenceWindow.enable",
+          "group": "navigation@2"
+        },
+        {
+          "command": "relation-window.lookupReference",
+          "when": "view == relation-window-view && config.referenceWindow.enable",
+          "group": "navigation@3"
         }
       ]
     },
-    "configuration": {
-      "title": "Symbol Window",
-      "properties": {
-        "symbolWindow.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable the Symbol Window."
-        },
-        "relationWindow.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable the Relation Window."
-        },
-        "relationWindow.enableDeepSearch": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable Deep Search in Relation Window (uses text scanning when LSP results are insufficient)."
-        },
-        "symbolWindow.cleanCStyleTypes": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically move C/C++ style type suffixes (e.g., (struct), (typedef)) from the symbol name to the detail view."
-        },
-        "symbolWindow.moveSignatureToDetail": {
-          "type": "boolean",
-          "default": true,
-          "description": "Move function signatures/parameters (e.g., (int a, char b)) from the symbol name to the detail view for a cleaner list."
-        },
-        "symbolWindow.enableDeepSearch": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable the Deep Search feature, which uses text scanning (Ripgrep) to find symbols when LSP results are truncated."
-        },
-        "shared.enableDatabaseMode": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable Database Mode (Experimental). Uses a local SQLite database for instant project-wide symbol search."
-        },
-        "shared.indexingBatchSize": {
-          "type": "integer",
-          "default": 15,
-          "minimum": 1,
-          "maximum": 200,
-          "description": "Number of files to process in each indexing batch. Range: 1-200. Default is 15."
-        },
-        "shared.includeFiles": {
-          "type": "string",
-          "default": "",
-          "description": "Comma-separated list of glob patterns to include in indexing (e.g. **/*.c, **/*.h). If empty, all files are included."
-        },
-        "shared.excludeFiles": {
-          "type": "string",
-          "default": "**/*.md, **/*.txt, **/*.log, **/*.lock, **/*.map, **/*.pdf, **/*.doc, **/*.docx, **/*.xls, **/*.xlsx, **/*.ppt, **/*.pptx, **/*.png, **/*.jpg, **/*.jpeg, **/*.gif, **/*.bmp, **/*.ico, **/*.svg, **/*.mp3, **/*.mp4, **/*.wav, **/*.zip, **/*.tar, **/*.gz, **/*.7z, **/*.rar, **/*.bin, **/*.exe, **/*.dll, **/*.so, **/*.dylib, **/*.pdb, **/*.obj, **/*.o, **/*.a, **/*.min.js, **/*.min.css",
-          "description": "Comma-separated list of glob patterns to exclude from indexing (e.g. **/*.md). These are applied after .gitignore."
+    "configuration": [
+      {
+        "title": "All Window: Enable",
+        "properties": {
+          "symbolWindow.enable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable the Symbol Window."
+          },
+          "relationWindow.enable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable the Relation Window."
+          },
+          "referenceWindow.enable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable the Reference Window."
+          }
+        }
+      },
+      {
+        "title": "Window Shared: Settings",
+        "properties": {
+          "shared.enableDatabaseMode": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable Database Mode. Uses a local SQLite database for instant project-wide symbol search."
+          },
+          "shared.database.cacheSizeMB": {
+            "type": "integer",
+            "default": 64,
+            "minimum": 0,
+            "maximum": 1024,
+            "description": "SQLite cache size in Megabytes (MB). Higher values improve search performance but consume more memory. Default is 64MB."
+          },
+          "shared.indexingBatchSize": {
+            "type": "integer",
+            "default": 15,
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Number of files to process in each indexing batch. Range: 1-200. Default is 15."
+          },
+          "shared.includeFiles": {
+            "type": "string",
+            "default": "",
+            "description": "Comma-separated list of glob patterns to include in indexing (e.g. **/*.c, **/*.h). If empty, all files are included."
+          },
+          "shared.excludeFiles": {
+            "type": "string",
+            "default": "**/*.md, **/*.txt, **/*.log, **/*.lock, **/*.map, **/*.pdf, **/*.doc, **/*.docx, **/*.xls, **/*.xlsx, **/*.ppt, **/*.pptx, **/*.png, **/*.jpg, **/*.jpeg, **/*.gif, **/*.bmp, **/*.ico, **/*.svg, **/*.mp3, **/*.mp4, **/*.wav, **/*.zip, **/*.tar, **/*.gz, **/*.7z, **/*.rar, **/*.bin, **/*.exe, **/*.dll, **/*.so, **/*.dylib, **/*.pdb, **/*.obj, **/*.o, **/*.a, **/*.min.js, **/*.min.css",
+            "description": "Comma-separated list of glob patterns to exclude from indexing (e.g. **/*.md). These are applied after .gitignore."
+          }
+        }
+      },
+      {
+        "title": "Symbol Window: Settings",
+        "properties": {
+          "symbolWindow.symbolParsing.mode": {
+            "type": "string",
+            "scope": "resource",
+            "default": "auto",
+            "enum": [
+              "auto",
+              "c-style",
+              "default"
+            ],
+            "enumDescriptions": [
+              "Automatically detect based on language ID.",
+              "Force C/C++/Java style parsing (extract signature and type).",
+              "Disable parsing (raw LSP name)."
+            ],
+            "description": "Controls how symbol names are parsed and displayed."
+          },
+          "symbolWindow.splitView": {
+            "type": "boolean",
+            "default": false,
+            "description": "Split the Symbol Window into two separate views: 'Current Document' (Primary Side Bar) and 'Project Symbols' (Secondary Side Bar)."
+          },
+          "symbolWindow.enableHighlighting": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable keyword highlighting in search results."
+          }
+        }
+      },
+      {
+        "title": "Relation Window: Settings",
+        "properties": {
+          "relationWindow.autoSearch": {
+            "type": "boolean",
+            "default": false,
+            "description": "Automatically search for relations when the cursor moves."
+          },
+          "relationWindow.showBothDirections": {
+            "type": "boolean",
+            "default": false,
+            "description": "Show both incoming and outgoing calls in the Relation Window."
+          },
+          "relationWindow.autoExpandBothDirections": {
+            "type": "boolean",
+            "default": false,
+            "description": "Automatically expand incoming and outgoing nodes when showing both directions."
+          },
+          "relationWindow.enableDeepSearch": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable Deep Search in Relation Window (uses text scanning when LSP results are insufficient)."
+          }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -245,7 +399,8 @@
     "@types/node": "22.x",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
-    "@types/vscode": "^1.106.1",
+    "@types/uuid": "^10.0.0",
+    "@types/vscode": "^1.101.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.0",
@@ -259,6 +414,7 @@
     "@vscode/ripgrep": "^1.17.0",
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "uuid": "^13.0.0"
   }
 }

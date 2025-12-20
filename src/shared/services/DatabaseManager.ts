@@ -20,13 +20,13 @@ export class DatabaseManager {
     private init() {
         if (this.context.storageUri) {
             const dbPath = vscode.Uri.joinPath(this.context.storageUri, 'symbols.db').fsPath;
-            console.log('[DatabaseManager] Database path:', dbPath);
+            console.log('[Source Window] [DatabaseManager] Database path:', dbPath);
             
             try {
                 this._db = new SymbolDatabase(dbPath);
                 this._db.init();
             } catch (e) {
-                console.error('[DatabaseManager] Failed to initialize database:', e);
+                console.error('[Source Window] [DatabaseManager] Failed to initialize database:', e);
                 this._db = undefined;
             }
         }
@@ -46,9 +46,9 @@ export class DatabaseManager {
                 
                 this._indexer.startWatching();
                 this._indexer.syncIndex();
-                console.log('[DatabaseManager] Database initialized.');
+                console.log('[Source Window] [DatabaseManager] Database initialized.');
             } catch (e) {
-                console.error('[DatabaseManager] Failed to start indexer:', e);
+                console.error('[Source Window] [DatabaseManager] Failed to start indexer:', e);
                 this._indexer = undefined;
             }
         }
@@ -61,7 +61,7 @@ export class DatabaseManager {
         }
     }
 
-    public get db(): SymbolDatabase | undefined {
+    public getDb(): SymbolDatabase | undefined {
         return this._db;
     }
 

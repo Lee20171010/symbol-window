@@ -1,10 +1,25 @@
 # Change Log
 
-All notable changes to the "symbol-window" extension will be documented in this file.
+All notable changes to the "symbol-relation-window" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
 ## [unrelease]
+
+### Added
+- **Relation Window**: Fully implemented the Relation Window for exploring Call Hierarchy.
+    - **Incoming/Outgoing Calls**: View callers and callees for the selected symbol.
+    - **Deep Search**: Integrated `ripgrep`-based Deep Search for relations to find calls even when LSP is incomplete (e.g., in C/C++ projects).
+    - **Filtering**: Filter relation results by symbol kind (e.g., show only Functions or Methods).
+    - **Settings**: Added options to "Remove Duplicates" and "Show Definition Path".
+- **Reference Window**: Added a dedicated window for looking up references.
+    - **Code Preview**: View code context for each reference directly in the list.
+    - **Navigation**: Quick jump to reference locations.
+- **Symbol Window**:
+    - **Kind Filtering**: Added a new filter button to the search bar allowing users to filter symbols by type (Class, Method, Variable, etc.).
+    - **C-Style Parsing**: Improved symbol parsing for C/C++ to cleaner display names by stripping type suffixes and signatures (configurable).
+- **Shared**:
+    - **Deep Search Utility**: Centralized `ripgrep` search logic for use by both Symbol and Relation windows.
 
 ### Refactor
 - **Shared Core**: Extracted `LspClient` and `DatabaseManager` to `src/shared/core`. This centralizes the LSP connection and SQLite database management, allowing both the Symbol Window and the upcoming Relation Window to share the same resources efficiently.
@@ -13,9 +28,6 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### UI/UX
 - **Container**: Renamed the main Activity Bar container from "Symbol Window" to **"Window"**. This provides a neutral parent container for both the Symbol and Relation views.
 - **Foolproof View**: Introduced a "Foolproof" view (`all-disabled-view`) that activates when both `symbolWindow.enable` and `relationWindow.enable` are set to `false`. It displays a clean interface with buttons to easily re-enable either window.
-
-### Added
-- **Relation Window**: Added the initial scaffolding for the Relation Window (`relation-window-view`) in `package.json`.
 
 ## [0.1.2] - 2025-11-27
 

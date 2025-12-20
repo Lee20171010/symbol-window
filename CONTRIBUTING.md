@@ -11,8 +11,8 @@ Thank you for your interest in contributing to Symbol Window! We welcome bug rep
 
 2.  **Clone the repository**:
     ```bash
-    git clone https://github.com/Lee20171010/symbol-window.git
-    cd symbol-window
+    git clone https://github.com/Lee20171010/symbol-relation-window.git
+    cd symbol-relation-window
     ```
 
 3.  **Install dependencies**:
@@ -26,13 +26,28 @@ Thank you for your interest in contributing to Symbol Window! We welcome bug rep
 
 ## Project Structure
 
-- `src/extension.ts`: The main entry point of the extension.
-- `src/controller/`: Contains the business logic (`SymbolController`) handling communication between VS Code and the Webview.
-- `src/webview/`: The React application running inside the Webview.
-    - `App.tsx`: Main React component.
-    - `components/`: UI components like `SymbolTree`.
-- `src/model/`: Handles data fetching from VS Code APIs.
-- `src/view/`: Manages the Webview panel creation.
+The codebase follows a modular MVC-like pattern. Here is the breakdown of the folder structure and the responsibilities of key components:
+
+```
+src/
+├── extension.ts                       // Entry point: Activates features, registers commands.
+├── features/                          // Feature Modules
+│   ├── <feature>/                     // Standard Pattern (e.g., relation, reference)
+│   │   ├── *Controller.ts             // Logic: Orchestrates events, updates, and mode switching.
+│   │   ├── *Model.ts                  // Data: Fetches information from LSP, Database, or Search.
+│   │   └── *WebviewProvider.ts        // UI Backend: Manages the Webview panel and IPC messages.
+│   │
+│   └── symbol/                        // Symbol Window Specifics
+│       ├── indexer/                   // Background Indexer: Scans workspace files into SQLite.
+│       └── parsing/                   // Parsing Strategies: Cleans symbol names (e.g., removing C++ params).
+├── shared/                            // Shared Infrastructure
+│   ├── core/                          // Core Services: Singletons like LspClient and DatabaseManager.
+│   ├── db/                            // Database Layer: SQLite schema and query methods.
+│   └── searchUtils.ts                 // Search Engine: Wrapper around `ripgrep` for Deep Search.
+└── webview/                           // Frontend Application (React)
+    ├── features/                      // UI Components: React components for each feature.
+    └── vscode-api.ts                  // API Wrapper: Typed wrapper for VS Code Webview API.
+```
 
 ## Building
 

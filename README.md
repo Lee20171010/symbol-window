@@ -1,4 +1,4 @@
-# Symbol Window
+# Symbol & Relation Window
 
 A Visual Studio Code extension that provides a "Source Insight"-like symbol navigation experience. It offers a dedicated side panel to browse symbols in the current document or search across the entire workspace with a native look and feel.
 
@@ -22,14 +22,28 @@ A Visual Studio Code extension that provides a "Source Insight"-like symbol navi
     - **Optimized Matching**: Uses regex permutations for fast multi-keyword matching.
 
 ### 3. Database Mode (New!)
-For large workspaces where standard LSP search is slow or incomplete, Symbol Window now offers a high-performance **Database Mode**.
+For large workspaces where standard LSP search is slow or incomplete, Symbol & Relation Window now offers a high-performance **Database Mode**.
 - **SQLite Backend**: Indexes workspace symbols into a local SQLite database for instant search results.
 - **Persistent Index**: The index persists across sessions, so you don't have to wait for re-indexing every time you open VS Code.
 - **Incremental Updates**: Automatically detects file changes and updates the index in the background.
 - **Hybrid Search**: Combines the speed of database lookups with the accuracy of LSP symbol parsing.
 - **Visual Indicator**: The UI clearly labels this mode as **PROJECT WORKSPACE (DATABASE)**.
 
-### 4. Native Experience
+### 4. Relation Window (New!)
+A dedicated view for exploring the **Call Hierarchy** of your code.
+-   **Incoming & Outgoing Calls**: Easily switch between seeing who calls a function (Callers) and what functions it calls (Callees).
+-   **Auto-Sync**: The view automatically updates to show the hierarchy of the symbol under your cursor.
+-   **Deep Search Integration**: Like the Symbol Window, the Relation Window uses a hybrid approach. If standard LSP call hierarchy is incomplete (common in C/C++), it falls back to `ripgrep` to find textual references and maps them to symbols.
+-   **Filtering**: Filter the hierarchy by symbol kind (e.g., show only Functions, hide Variables).
+-   **History**: Navigate back and forward through your exploration history.
+
+### 5. Reference Window (New!)
+A dedicated view for **Lookup References**.
+-   **Find References**: Quickly find all references to a symbol across the workspace.
+-   **Code Preview**: Preview the code surrounding the reference without opening the file.
+-   **Navigation**: Jump to the reference location with a single click.
+
+### 6. Native Experience
 - **UI**: Built with `@vscode/webview-ui-toolkit` to match VS Code's native design.
 - **Icons**: Uses standard VS Code Codicons.
 - **Theme Aware**: Automatically adapts to Light, Dark, and High Contrast themes.
@@ -43,6 +57,9 @@ You can customize the appearance and behavior of the symbol list via VS Code set
 
 - **`relationWindow.enable`** (Default: `true`):
   Enable or disable the Relation Window view.
+
+- **`relationWindow.defaultDirection`** (Default: `incoming`):
+  Set the default direction for the Relation Window (`incoming` or `outgoing`).
 
 - **`symbolWindow.cleanCStyleTypes`** (Default: `true`):  
   Moves C-style type suffixes (e.g., `(typedef)`, `(struct)`) from the symbol name to the detail view (gray text).
@@ -113,7 +130,7 @@ If you open a large workspace, the extension may show a "Waiting for symbol prov
 This extension is built on top of VS Code's native Symbol APIs (`vscode.executeDocumentSymbolProvider` and `vscode.executeWorkspaceSymbolProvider`). While it inherits the underlying capabilities of your installed Language Server Protocol (LSP) extensions, it also provides significant enhancements:
 
 **Enhancements:**
-- **Multi-Keyword Search**: Unlike standard VS Code search which often requires exact order, Symbol Window supports space-separated keywords (e.g., `User Controller`) and performs a client-side intersection. This allows for order-independent matching and more precise filtering.
+- **Multi-Keyword Search**: Unlike standard VS Code search which often requires exact order, Symbol & Relation Window supports space-separated keywords (e.g., `User Controller`) and performs a client-side intersection. This allows for order-independent matching and more precise filtering.
 - **Structure Visualization**: Provides a persistent tree view for the current document, unlike the transient "Go to Symbol" quick pick.
 - **Database Mode**: Solves the "incomplete results" problem of standard LSP by maintaining a full index of workspace symbols.
 

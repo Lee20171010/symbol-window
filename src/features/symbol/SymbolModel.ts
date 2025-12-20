@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { SymbolItem } from '../../shared/types';
+import { SymbolItem } from '../../shared/common/types';
 import * as cp from 'child_process';
 import { rgPath } from '@vscode/ripgrep';
+import { parserRegistry } from './parsing/ParserRegistry';
 
 export class SymbolModel {
     
@@ -32,7 +33,7 @@ export class SymbolModel {
 
             return this.mapWorkspaceSymbols(symbols);
         } catch (e) {
-            console.error(`[SymbolModel] Error fetching symbols:`, e);
+            console.error(`[Source Window] Error fetching symbols:`, e);
             // If we fail to map symbols, we should probably return the raw symbols or empty?
             // If we return empty, checkReadiness loops forever.
             // Let's try to return empty but log it.
@@ -45,7 +46,8 @@ export class SymbolModel {
         keywords: string[], 
         token?: vscode.CancellationToken,
         scopePath?: string,
-        includePattern?: string
+        includePattern?: string,
+        excludePattern?: string
     ): Promise<SymbolItem[]> {
         // Strategy: Use ripgrep with regex permutations to find files containing ALL keywords.
         // Since rg doesn't support lookahead, we use alternation of permutations:
@@ -78,13 +80,11 @@ export class SymbolModel {
             // rg arguments:
             // --files-with-matches (-l)
             // --ignore-case (-i)
-            // --multiline (-U): Allow matching across lines (crucial for "A.*B" where A and B are on different lines)
-            // --multiline-dotall: Allow '.' to match newlines
             // --glob: Follow .gitignore
             // --max-columns: Ignore lines longer than 1000 chars (avoids minified files)
             
             const args = [
-                '-i', '-l', '-U', '--multiline-dotall', '--max-columns', '1000',
+                '-i', '-l', '--max-columns', '1000',
                 '--glob', '!**/*.{txt,log,lock,map,pdf,doc,docx,xls,xlsx,ppt,pptx,png,jpg,jpeg,gif,bmp,ico,svg,mp3,mp4,wav,zip,tar,gz,7z,rar,bin,exe,dll,so,dylib,pdb,obj,o,a,min.js,min.css}', 
                 regexPattern, 
                 '.'
@@ -96,6 +96,15 @@ export class SymbolModel {
                 const patterns = includePattern.split(',').map(p => p.trim()).filter(p => p.length > 0);
                 patterns.forEach(p => {
                     args.push('--glob', p);
+                });
+            }
+
+            // Add user defined exclude patterns
+            if (excludePattern) {
+                // Split by comma and trim
+                const patterns = excludePattern.split(',').map(p => p.trim()).filter(p => p.length > 0);
+                patterns.forEach(p => {
+                    args.push('--glob', `!${p}`);
                 });
             }
             
@@ -124,7 +133,7 @@ export class SymbolModel {
             }
 
         } catch (e) {
-            console.error('[SymbolModel] Ripgrep failed', e);
+            console.error('[Source Window] Ripgrep failed', e);
             return [];
         }
 
@@ -132,42 +141,80 @@ export class SymbolModel {
             return [];
         }
 
-        const promises = Array.from(matchedUris).map(async (uriStr) => {
+        const uris = Array.from(matchedUris);
+        const results: SymbolItem[] = [];
+        
+        // Get batch size from settings
+        const sharedConfig = vscode.workspace.getConfiguration('shared');
+        let batchSize = sharedConfig.get<number>('indexingBatchSize', 15);
+        // Limit batch size to avoid LSP crash
+        const MAX_BATCH_SIZE = 200;
+        if (batchSize <= 0 || batchSize > MAX_BATCH_SIZE) {
+            batchSize = MAX_BATCH_SIZE;
+        }
+
+        for (let i = 0; i < uris.length; i += batchSize) {
             if (token?.isCancellationRequested) {
-                return [];
+                break;
             }
 
-            const uri = vscode.Uri.parse(uriStr);
-
-            // If we had more than 3 keywords, we still need to check the remaining ones
-            // But since we already filtered by the top 3, this set should be small enough to check in JS
-            // Actually, we can just let filterSymbols handle it, or do a quick text check.
-            // Let's do a quick text check if there are remaining keywords.
-            if (remainingKeywords.length > 0) {
-                    try {
-                    const fileData = await vscode.workspace.fs.readFile(uri);
-                    const text = new TextDecoder().decode(fileData).toLowerCase();
-                    const allFound = remainingKeywords.every(k => text.includes(k.toLowerCase()));
-                    if (!allFound) {
-                        return [];
-                    }
-                } catch (e) {
-                    // ignore read error
+            const batch = uris.slice(i, i + batchSize);
+            
+            const batchPromises = batch.map(async (uriStr) => {
+                if (token?.isCancellationRequested) {
+                    return [];
                 }
-            }
 
-            try {
-                const symbols = await this.getDocumentSymbols(uri);
-                const filtered = this.filterSymbols(symbols, keywords);
-                return filtered;
-            } catch (e) {
-                console.error(`[SymbolModel] Error getting symbols for ${uriStr}`, e);
-                return [];
-            }
-        });
+                const uri = vscode.Uri.parse(uriStr);
 
-        const results = await Promise.all(promises);
-        return results.flat();
+                // If we had more than 3 keywords, we still need to check the remaining ones
+                // But since we already filtered by the top 3, this set should be small enough to check in JS
+                // Actually, we can just let filterSymbols handle it, or do a quick text check.
+                // Let's do a quick text check if there are remaining keywords.
+                if (remainingKeywords.length > 0) {
+                        try {
+                        const fileData = await vscode.workspace.fs.readFile(uri);
+                        const text = new TextDecoder().decode(fileData).toLowerCase();
+                        const allFound = remainingKeywords.every(k => text.includes(k.toLowerCase()));
+                        if (!allFound) {
+                            return [];
+                        }
+                    } catch (e) {
+                        // ignore read error
+                    }
+                }
+
+                try {
+                    const symbols = await this.getDocumentSymbols(uri);
+                    const filtered = this.filterSymbols(symbols, keywords);
+                    
+                    // Add path info for Deep Search results
+                    return filtered.map(item => {
+                        const relativePath = vscode.workspace.asRelativePath(uri);
+                        const filename = relativePath.split(/[/\\]/).pop() || '';
+                        let location = '';
+                        if (relativePath === filename) {
+                            location = `${filename}:${item.range.start.line + 1}`;
+                        } else {
+                            const dir = relativePath.substring(0, relativePath.length - filename.length - 1);
+                            location = `${filename} (${dir}):${item.range.start.line + 1}`;
+                        }
+                        return { ...item, path: location, isDeepSearch: true };
+                    });
+                } catch (e) {
+                    console.error(`[Source Window] Error getting symbols for ${uriStr}`, e);
+                    return [];
+                }
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults.flat());
+
+            // Yield to UI
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        return results;
     }
 
     private permute(permutation: string[]): string[][] {
@@ -221,62 +268,19 @@ export class SymbolModel {
     }
     
     // Fix recursion bug in previous block and apply same logic
-    private mapDocumentSymbolsRecursive(symbols: vscode.DocumentSymbol[], cleanCStyle: boolean, moveSignature: boolean, uri: vscode.Uri): SymbolItem[] {
+    private mapDocumentSymbolsRecursive(symbols: vscode.DocumentSymbol[], parser: any, uri: vscode.Uri): SymbolItem[] {
         return symbols.map(s => {
-            let finalName = s.name;
-            let finalDetail = s.detail || '';
+            const { name, detail } = parser.parse(s.name, s.detail || '', s.kind);
 
-            // Order matters: We want Signature first, then Type info in detail.
-            // But we process them sequentially.
-            // If we process CStyle first, detail = "struct".
-            // Then Signature, detail = "struct (int a)". -> This is wrong order for display if we want Signature first.
-            // User wants: Name (Signature) Type
-            // So detail should be: "(int a)  struct"
-            
-            let typeSuffix = '';
-            let signatureSuffix = '';
-
-            if (cleanCStyle) {
-                const { name, type } = parseCStyleType(finalName);
-                if (type) {
-                    finalName = name;
-                    typeSuffix = type;
-                }
-            }
-
-            if (moveSignature) {
-                const { name, signature } = parseSignature(finalName);
-                if (signature) {
-                    finalName = name;
-                    signatureSuffix = signature;
-                }
-            }
-
-            // Construct final detail: OriginalDetail + Signature + Type
-            // But we need to be careful about existing detail.
-            
-            const parts: string[] = [];
-            if (signatureSuffix) {
-                parts.push(signatureSuffix);
-            }
-            if (typeSuffix) {
-                if (!finalDetail.toLowerCase().includes(typeSuffix)) {
-                    parts.push(typeSuffix);
-                }
-            }
-            if (finalDetail) {
-                parts.push(finalDetail);
-            }
-            
-            finalDetail = parts.join('  ');
-
+            // Current Mode: No path info needed
             return {
-                name: finalName,
-                detail: finalDetail,
+                name: name,
+                detail: detail,
+                // path: undefined, // Explicitly undefined
                 kind: s.kind,
                 range: s.range,
                 selectionRange: s.selectionRange,
-                children: this.mapDocumentSymbolsRecursive(s.children, cleanCStyle, moveSignature, uri),
+                children: this.mapDocumentSymbolsRecursive(s.children, parser, uri),
                 uri: uri.toString()
             };
 
@@ -285,60 +289,80 @@ export class SymbolModel {
 
     private mapDocumentSymbols(symbols: vscode.DocumentSymbol[], uri: vscode.Uri): SymbolItem[] {
         const config = vscode.workspace.getConfiguration('symbolWindow');
-        const cleanCStyle = config.get<boolean>('cleanCStyleTypes', true);
-        const moveSignature = config.get<boolean>('moveSignatureToDetail', true);
-        return this.mapDocumentSymbolsRecursive(symbols, cleanCStyle, moveSignature, uri);
+        const mode = config.get<string>('symbolParsing.mode', 'auto');
+        
+        // Get language ID from document if possible, but we only have URI here.
+        // We can try to find the document in open editors or use file extension mapping.
+        // Better: SymbolController should pass the document or languageId.
+        // For now, let's try to get it from the URI extension or active editor.
+        
+        // Actually, getDocumentSymbols is called for a specific URI.
+        // We can try to find the text document.
+        let languageId = '';
+        const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+        if (doc) {
+            languageId = doc.languageId;
+        } else {
+            // Fallback: guess from extension
+            const ext = uri.path.split('.').pop()?.toLowerCase();
+            if (ext === 'c' || ext === 'h') {
+                languageId = 'c';
+            } else if (ext === 'cpp' || ext === 'hpp' || ext === 'cc') {
+                languageId = 'cpp';
+            } else if (ext === 'java') {
+                languageId = 'java';
+            } else if (ext === 'cs') {
+                languageId = 'csharp';
+            }
+        }
+
+        const parser = parserRegistry.getParser(languageId, mode);
+        return this.mapDocumentSymbolsRecursive(symbols, parser, uri);
     }
 
     private mapWorkspaceSymbols(symbols: vscode.SymbolInformation[]): SymbolItem[] {
         const config = vscode.workspace.getConfiguration('symbolWindow');
-        const cleanCStyle = config.get<boolean>('cleanCStyleTypes', true);
-        const moveSignature = config.get<boolean>('moveSignatureToDetail', true);
+        const mode = config.get<string>('symbolParsing.mode', 'auto');
 
         return symbols.map(s => {
-            let finalName = s.name;
-            let finalDetail = s.containerName || '';
-
-            let typeSuffix = '';
-            let signatureSuffix = '';
-
-            if (cleanCStyle) {
-                const { name, type } = parseCStyleType(finalName);
-                if (type) {
-                    finalName = name;
-                    typeSuffix = type;
-                }
-            }
-
-            if (moveSignature) {
-                const { name, signature } = parseSignature(finalName);
-                if (signature) {
-                    finalName = name;
-                    signatureSuffix = signature;
-                }
-            }
-
-            const parts: string[] = [];
-            if (signatureSuffix) {
-                parts.push(signatureSuffix);
-            }
-            if (typeSuffix) {
-                if (!finalDetail.toLowerCase().includes(typeSuffix)) {
-                    parts.push(typeSuffix);
-                }
-            }
-            if (finalDetail) {
-                parts.push(finalDetail);
+            // Guess language from file extension
+            const ext = s.location.uri.path.split('.').pop()?.toLowerCase() || '';
+            let languageId = '';
+            if (ext === 'c' || ext === 'h') {
+                languageId = 'c';
+            } else if (ext === 'cpp' || ext === 'hpp' || ext === 'cc') {
+                languageId = 'cpp';
+            } else if (ext === 'java') {
+                languageId = 'java';
+            } else if (ext === 'cs') {
+                languageId = 'csharp';
             }
             
-            finalDetail = parts.join('  ');
+            const parser = parserRegistry.getParser(languageId, mode);
+            const { name, detail } = parser.parse(s.name, s.containerName || '', s.kind);
+
+            // Project Mode: filename (path):line
+            const relativePath = vscode.workspace.asRelativePath(s.location.uri);
+            const filename = relativePath.split(/[/\\]/).pop() || '';
+            // If relativePath is just filename, don't show (path)
+            // Format: filename (dir/path):line
+            
+            let location = '';
+            if (relativePath === filename) {
+                location = `${filename}:${s.location.range.start.line + 1}`;
+            } else {
+                // Remove filename from relativePath to get dir
+                const dir = relativePath.substring(0, relativePath.length - filename.length - 1); // -1 for separator
+                location = `${filename} (${dir}):${s.location.range.start.line + 1}`;
+            }
 
             return {
-                name: finalName,
-                detail: finalDetail,
+                name: name,
+                detail: detail,
+                path: location,
                 kind: s.kind,
                 range: s.location.range,
-                selectionRange: s.location.range,
+                selectionRange: s.location.range, // WorkspaceSymbol doesn't have selectionRange
                 children: [],
                 uri: s.location.uri.toString(),
                 containerName: s.containerName
@@ -348,32 +372,4 @@ export class SymbolModel {
 
 }
 
-export function parseCStyleType(name: string): { name: string, type: string } {
-    const regex = /\s*\((typedef|struct|enum|union|class|interface|macro|declaration)\)$/i;
-    const match = name.match(regex);
-    if (match) {
-        return { 
-            name: name.replace(regex, ''), 
-            type: match[1].toLowerCase() 
-        };
-    }
-    return { name, type: '' };
-}
 
-export function parseSignature(name: string): { name: string, signature: string } {
-    // Match anything starting with '(' at the end of the string, 
-    // but be careful not to match simple types if they were not caught by parseCStyleType.
-    // We assume a signature contains at least one comma or space inside parens, or is empty ().
-    // Regex: \s*(\(.*\))$
-    
-    const regex = /\s*(\(.*\))$/;
-    const match = name.match(regex);
-    
-    if (match) {
-        return {
-            name: name.replace(regex, ''),
-            signature: match[1]
-        };
-    }
-    return { name, signature: '' };
-}

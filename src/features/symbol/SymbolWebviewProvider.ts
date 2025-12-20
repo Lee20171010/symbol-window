@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { SymbolController } from './SymbolController';
-import { WebviewMessage } from '../../shared/types';
+import { WebviewMessage } from '../../shared/common/types';
+import { previewLocation } from '../../shared/utils/navigation';
 
 export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'symbol-window-view';
@@ -14,6 +15,24 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
     ) {
         this.controller = controller;
         this.controller.setProvider(this);
+    }
+
+    public setController(controller: SymbolController) {
+        this.controller = controller;
+        this.controller.setProvider(this);
+    }
+
+    public get isVisible(): boolean {
+        return this._view ? this._view.visible : false;
+    }
+
+    public show() {
+        if (this._view) {
+            this._view.show(true); // true to preserve focus? No, we want to focus it.
+            // Actually, show(true) preserves focus on the *editor*. show(false) or show() focuses the view.
+            // We want to focus the view so we can focus the input.
+            this._view.show();
+        }
     }
 
     public resolveWebviewView(
@@ -38,10 +57,15 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
                     this.controller.refresh();
                     break;
                 case 'search':
-                    this.controller.handleSearch(data.query, data.includePattern);
+                    this.controller.handleSearch(data.query, data.includePattern, data.excludePattern, data.kinds);
                     break;
                 case 'jump':
                     this.controller.jumpTo(data.uri, data.range);
+                    break;
+                case 'preview':
+                    if (data.uri && data.range) {
+                        previewLocation(data.uri, data.range);
+                    }
                     break;
                 case 'loadMore':
                     this.controller.loadMore();
@@ -59,6 +83,9 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
                 case 'cancel':
                     this.controller.cancelSearch();
                     break;
+                case 'saveFilters':
+                    this.controller.saveFilters(data.currentFilter, data.projectFilter);
+                    break;
             }
         });
     }
@@ -71,7 +98,7 @@ export class SymbolWebviewProvider implements vscode.WebviewViewProvider {
 
     private _getHtmlForWebview(webview: vscode.Webview) {
         // Get the local path to main script run in the webview, then convert it to a uri we can use in the webview.
-        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview-symbol.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'style.css'));
         const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.css'));
 

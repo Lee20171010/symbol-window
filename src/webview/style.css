@@ -18,7 +18,7 @@ body {
 }
 
 .container.has-progress {
-    padding-top: 28px; /* Height of indexing-progress-container */
+    padding-top: 0; /* Remove padding-top */
 }
 
 .search-container {
@@ -47,9 +47,45 @@ body {
     opacity: 0.7;
 }
 
+.progress-bar-container {
+    height: 2px;
+    width: 100%;
+    background-color: var(--vscode-scrollbarSlider-background); /* Track color */
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-bar {
+    position: absolute;
+    height: 100%;
+    width: 2%;
+    background-color: var(--vscode-progressBar-background);
+    animation: progress-indeterminate 2s infinite linear;
+    left: 0%;
+}
+
+@keyframes progress-indeterminate {
+    0% {
+        left: 0%;
+        width: 5%;
+        transform: translateX(-100%);
+    }
+    50% {
+        left: 50%;
+        width: 30%;
+        transform: translateX(-50%);
+    }
+    100% {
+        left: 100%;
+        width: 5%;
+        transform: translateX(0%);
+    }
+}
+
 .tree-container {
     flex: 1;
     overflow-y: auto;
+    overflow-x: auto; /* Enable horizontal scroll */
 }
 
 .symbol-item {
@@ -58,6 +94,10 @@ body {
     padding: 2px 5px;
     cursor: pointer;
     user-select: none;
+    min-width: 100%; /* Allow item to be wider than container */
+    width: max-content; /* Ensure it takes full width of content */
+    box-sizing: border-box;
+    border-left: 3px solid transparent; /* Placeholder for deep search border */
 }
 
 .symbol-item:hover {
@@ -87,24 +127,80 @@ body {
 .symbol-name {
     flex-shrink: 0; /* Prevent name from shrinking */
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 70%; /* Ensure name doesn't take up entire space if detail is long */
+    /* Remove truncation to allow scrolling */
+    /* overflow: hidden; */
+    /* text-overflow: ellipsis; */
+    /* max-width: 70%; */
     margin-right: 5px;
 }
 
 .symbol-detail {
-    flex: 1; /* Allow detail to shrink */
+    flex: none; /* Don't shrink/grow, just take natural width */
     display: inline-block;
+    opacity: 0.6;
+    font-size: 0.85em;
+    white-space: nowrap;
+    /* Remove truncation to allow scrolling */
+    /* overflow: hidden; */
+    /* text-overflow: ellipsis; */
+}
+
+/* Reuse .path from Relation Window, but ensure it works here too */
+/* .path is defined globally below, so it should apply */
+
+/* Relation Window Styles */
+.relation-item {
+    display: flex;
+    align-items: center;
+    padding: 2px 5px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.relation-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.relation-item.selected {
+    background-color: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+.relation-item .expand-icon {
+    width: 16px;
+    cursor: pointer;
+    margin-right: 4px;
+}
+
+.relation-item .expand-icon.hidden {
+    visibility: hidden;
+}
+
+.relation-item .symbol-icon {
+    margin-right: 6px;
+    width: 16px;
+    text-align: center;
+}
+
+.relation-item .name {
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 5px;
+}
+
+.relation-item .detail {
+    flex: 1;
     opacity: 0.6;
     font-size: 0.85em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--vscode-descriptionForeground);
-    min-width: 0; /* Allow flex item to shrink below content size */
-    text-align: right; /* Align text to the right */
-    margin-left: auto; /* Push to the right */
+}
+
+.relation-children {
+    padding-left: 22px;
 }
 
 .no-results {
@@ -224,15 +320,30 @@ body {
 }
 
 .indexing-progress-container {
-    position: absolute;
-    top: 0;
-    left: 0;
+    /* Flex layout item, not absolute */
     width: 100%;
     z-index: 100;
     background-color: var(--vscode-editor-background);
     border-bottom: 1px solid var(--vscode-widget-border);
-    padding-bottom: 2px;
+    flex-shrink: 0; /* Prevent shrinking */
+    
+    /* Animation for height */
+    height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: height 0.2s ease-out, opacity 0.2s ease-out, padding 0.2s ease-out, border-width 0.2s ease-out;
+    padding-bottom: 0;
+    border-bottom-width: 0;
 }
+
+.indexing-progress-container.visible {
+    height: 28px;
+    opacity: 1;
+    padding-bottom: 2px;
+    border-bottom-width: 1px;
+}
+
+/* Removed @keyframes slideDown as we use transition now */
 
 .indexing-label {
     display: flex;
@@ -253,4 +364,354 @@ body {
     height: 100%;
     background-color: var(--vscode-progressBar-background);
     transition: width 0.2s ease;
+}
+
+.relation-tree {
+    padding-bottom: 20px;
+}
+
+.relation-root-container {
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+}
+
+
+
+.relation-item-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.relation-item {
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    min-width: 100%; /* Allow item to be wider than container */
+    width: max-content; /* Ensure it takes full width of content */
+    box-sizing: border-box;
+    border-left: 3px solid transparent; /* Placeholder for deep search border */
+}
+
+.relation-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.relation-item.selected {
+    background-color: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+
+
+.relation-item.load-more {
+    font-style: italic;
+    opacity: 0.8;
+    justify-content: center;
+}
+
+.relation-children {
+    padding-left: 16px; /* Indent recursive children */
+}
+
+.expand-icon {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 4px;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.expand-icon.expanded {
+    transform: rotate(90deg);
+}
+
+.expand-icon.hidden {
+    visibility: hidden;
+}
+
+.relation-item .name {
+    flex-shrink: 0;
+    white-space: nowrap;
+    /* Remove truncation */
+    /* overflow: hidden; */
+    /* text-overflow: ellipsis; */
+    margin-right: 5px;
+}
+
+.detail {
+    margin-left: 0;
+    opacity: 0.6;
+    font-size: 0.85em;
+    white-space: nowrap;
+    /* Remove truncation */
+    /* overflow: hidden; */
+    /* text-overflow: ellipsis; */
+    flex: none; /* Don't shrink */
+}
+
+.path {
+    margin-left: auto; /* Push to right */
+    padding-left: 10px;
+    opacity: 0.5;
+    font-size: 0.85em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Reference Window Styles */
+.reference-container { 
+    padding: 0; 
+    height: 100vh; 
+    overflow-y: auto;
+    box-sizing: border-box; 
+    display: block; /* Ensure it's not flex */
+}
+
+.reference-container .toolbar {
+    padding: 0 10px 10px 10px; /* Remove top padding */
+    margin-bottom: 0;
+}
+
+.reference-container #content {
+    padding: 10px;
+}
+
+.file-group { margin-bottom: 15px; min-width: 100%; width: max-content; box-sizing: border-box; }
+.file-header { font-weight: bold; margin-bottom: 5px; display: flex; align-items: center; cursor: pointer; }
+.file-header .codicon { margin-right: 4px; }
+.file-header .badge { margin-left: auto; }
+.filename { margin-right: 10px; }
+.dirname { opacity: 0.6; font-size: 0.9em; }
+.reference-item { padding: 2px 10px; cursor: pointer; display: flex; align-items: center; min-width: 100%; width: max-content; box-sizing: border-box; border-left: 3px solid transparent; }
+.reference-item:hover { background-color: var(--vscode-list-hoverBackground); }
+.reference-item.selected { background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+.reference-item.deep-search-result.selected { background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+.line-number { color: var(--vscode-textLink-foreground); margin-right: 10px; min-width: 60px; flex-shrink: 0; }
+.code-preview { white-space: pre; font-family: var(--vscode-editor-font-family); }
+.toolbar { display: flex; justify-content: flex-start; margin-bottom: 10px; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 10px; min-width: fit-content; }
+.btn { background: transparent; color: var(--vscode-foreground); border: none; padding: 4px; cursor: pointer; display: flex; align-items: center; }
+.btn:hover { background: var(--vscode-toolbar-hoverBackground); border-radius: 4px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Deep Search Styles */
+.deep-search-result { 
+    /* Remove background color */
+    border-left-color: var(--vscode-charts-yellow); /* Use a distinct color like yellow/orange */
+    background-color: transparent;
+}
+
+.deep-search-icon {
+    color: var(--vscode-charts-yellow);
+    margin-right: 6px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    width: 16px;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.deep-search-icon.placeholder {
+    visibility: hidden;
+}
+
+.highlight {
+    background-color: var(--vscode-editor-findMatchHighlightBackground);
+    color: var(--vscode-editor-findMatchHighlightForeground);
+    border-radius: 2px;
+}
+
+.badge { font-size: 0.8em; background-color: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 1px 4px; border-radius: 2px; margin-right: 8px; }
+.search-box-container { display: flex; flex-direction: column; width: 100%; }
+.filters-row { display: flex; gap: 10px; width: 100%; align-items: flex-end; }
+.filter-box { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.filter-box.search-main { flex: 2; } /* Give search box more space */
+.filter-box .label { font-size: 0.85em; margin-bottom: 4px; opacity: 0.8; white-space: nowrap; }
+.search-input-wrapper { display: flex; align-items: center; width: 100%; position: relative; }
+.search-input { flex-grow: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 4px; height: 24px; box-sizing: border-box; }
+.search-input:focus { outline: 1px solid var(--vscode-focusBorder); border-color: var(--vscode-focusBorder); }
+.search-btn { position: absolute; right: 0; height: 100%; padding: 0 4px; }
+
+.relation-app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    outline: none; /* Remove focus outline */
+}
+
+.toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 4px;
+}
+
+.toolbar-button {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: none;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85em;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 2px;
+}
+
+.toolbar-button:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.relation-item.deep-search {
+    background-color: var(--vscode-editor-findMatchHighlightBackground);
+    opacity: 0.9;
+}
+
+.relation-item.deep-search:hover {
+    background-color: var(--vscode-list-hoverBackground);
+    opacity: 1;
+}
+
+.symbol-tree, .relation-tree, #content {
+    min-width: 100%;
+    width: max-content;
+    box-sizing: border-box;
+}
+
+/* Reference header styles */
+.reference-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    background-color: var(--vscode-sideBarSectionHeader-background);
+    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+    color: var(--vscode-sideBarTitle-foreground);
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.reference-header.expanded {
+    border-bottom: none;
+}
+
+.reference-header .codicon {
+    margin-right: 5px;
+}
+
+
+/* Filter View */
+.filter-view-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 40px;
+}
+
+.filter-view-content {
+    background-color: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-widget-border);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+    width: 90%;
+    max-width: 300px;
+    max-height: 80%;
+    display: flex;
+    flex-direction: column;
+    border-radius: 3px;
+}
+
+.filter-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--vscode-widget-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    background-color: var(--vscode-editorWidget-background);
+}
+
+.filter-header .close-btn {
+    cursor: pointer;
+}
+
+.filter-actions-top {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--vscode-widget-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--vscode-editorWidget-background);
+}
+
+.filter-description {
+    font-size: 0.9em;
+    opacity: 0.8;
+    font-style: italic;
+}
+
+.filter-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+.filter-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.filter-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.filter-item .name {
+    margin-left: 4px;
+}
+
+.filter-footer {
+    padding: 8px 12px;
+    border-top: 1px solid var(--vscode-widget-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    background-color: var(--vscode-editorWidget-background);
+}
+
+.codicon-filter.active {
+    color: var(--vscode-textLink-foreground);
+}
+
+/* Reference Window (Editor Panel) Overrides */
+body.reference-window {
+    background-color: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+}
+
+body.reference-window .search-container {
+    background-color: var(--vscode-editorWidget-background);
+    border-bottom: 1px solid var(--vscode-editorWidget-border);
+}
+
+
+.symbol-highlight {
+    font-weight: bold;
+    color: var(--vscode-list-highlightForeground);
 }

@@ -23,37 +23,33 @@
 ## 3. Architecture & Modules
 
 ### 3.1 Module Structure
-The extension is divided into two independent feature modules sharing a common core.
+The extension follows a modular architecture, separating business logic (Features) from infrastructure (Shared) and presentation (Webview).
+
 ```
 src/
-├── extension.ts           // Entry point (Activates features)
-├── features/
-│   ├── symbol/            // Symbol Window Feature
-│   │   ├── SymbolController.ts
-│   │   ├── SymbolModel.ts
-│   │   ├── SymbolWebviewProvider.ts
-│   │   └── indexer/       // Indexing Logic (Database Mode)
-│   ├── relation/          // Relation Window Feature
-│   │   ├── RelationController.ts
-│   │   ├── RelationModel.ts
-│   │   └── RelationWebviewProvider.ts
-│   └── placeholder/       // Placeholder Views
-│       └── DisabledWebviewProvider.ts // "All Disabled" View
-├── shared/                // Shared Utilities
-│   ├── core/              // Core Logic (Shared)
-│   │   ├── LspClient.ts       // Centralized LSP Status & Polling
-│   │   └── DatabaseManager.ts // Centralized SQLite Management
-│   ├── db/                // SQLite Database (Shared)
-│   ├── types.ts           // Shared Interfaces
-│   └── utils.ts
-└── webview/               // Frontend (React)
-    ├── index.tsx          // Entry
-    ├── App.tsx            // Main Component (Routing/Layout)
-    ├── features/
-    │   ├── symbol/        // Symbol Window UI
-    │   └── relation/      // Relation Window UI
-    └── components/        // Shared UI Components
+├── extension.ts                       // Entry point
+├── features/                          // Feature Modules (MVC-like structure)
+│   ├── symbol/                        // Symbol Window
+│   │   ├── parsing/                   // Symbol Name Cleaning Strategies
+│   │   └── indexer/                   // Background SQLite Indexer
+│   ├── relation/                      // Relation Window (Call Hierarchy)
+│   └── reference/                     // Reference Window
+├── shared/                            // Infrastructure & Utilities
+│   ├── core/                          // Singleton Services (LSP Client, DB Manager)
+│   ├── db/                            // SQLite Access Layer
+│   └── searchUtils.ts                 // Deep Search Engine (Ripgrep wrapper)
+└── webview/                           // Frontend Application (React)
+    ├── features/                      // UI Components per feature
+    └── vscode-api.ts                  // VS Code Webview API wrapper
 ```
+
+**Key Components:**
+*   **Features (`src/features/*`)**: Each folder (symbol, relation) is self-contained, typically consisting of:
+    *   `Controller`: Orchestrates events and updates.
+    *   `Model`: Fetches data from LSP or Database.
+    *   `WebviewProvider`: Manages the UI panel and IPC.
+*   **Shared Core (`src/shared/core`)**: Manages expensive resources like the Language Server connection and SQLite database connection, shared across all features to save memory.
+*   **Webview (`src/webview`)**: A single React application that renders different "Apps" (`SymbolApp`, `RelationApp`) based on the view context.
 
 ### 3.2 Data Flow
 1.  **Init:** Extension activates -> Reads config -> Instantiates enabled Controllers (`SymbolController`, `RelationController`) -> Registers ViewProviders.
@@ -264,6 +260,11 @@ The database schema is normalized to reduce storage size and improve query perfo
     - Show Symbol Name.
     - Show Symbol Detail/Signature (e.g., function parameters) in a subtle color.
     - **Icons:** Use VS Code Codicons mapped to `vscode.SymbolKind`.
+    - **Symbol Parsing (C-Style Optimization):**
+        - **Configuration:** `symbolWindow.symbolParsing.mode` (Default: `auto`).
+        - **Auto Mode:** Automatically detects language ID. For C/C++/Java/C#, it applies specialized parsing to extract function signatures and type suffixes (e.g., `(struct)`) from the name and move them to the detail view for cleaner display.
+        - **Fallback:** For other languages, or if configured to `none`, symbols are displayed exactly as returned by the LSP.
+        - **Extensibility:** Designed with a Strategy Pattern (`SymbolParser` interface) to easily add support for other languages in the future.
 
 #### 5.2.2 Mode: Project Symbols
 - **Data Source:** `vscode.executeWorkspaceSymbolProvider` (Standard) + `ripgrep` (Deep Search) OR **SQLite Database** (Database Mode).
@@ -303,11 +304,11 @@ The database schema is normalized to reduce storage size and improve query perfo
             - Fallback if standard search yields insufficient results (implementation detail).
         - **Optimization:**
             - **Regex Permutations:** Generates regex for all permutations of keywords (up to 5) to allow order-independent matching directly in `ripgrep` (e.g., `A.*B|B.*A`).
-            - **Ripgrep Options:** Uses `--multiline`, `--multiline-dotall`, and `--max-columns 1000` (to skip minified files).
+            - **Ripgrep Options:** Uses standard line-based search (no `--multiline`) for maximum performance.
         - **Purpose:** Overcome LSP result truncation (e.g., searching "User" returns only first 100 results).
         - **Strategy:**
-            1.  Identify the longest keyword (Primary Keyword).
-            2.  Use **Ripgrep (`rg`)** to scan the entire workspace for files containing the Primary Keyword.
+            1.  Generate regex permutations for the top 5 keywords (e.g., `A.*B|B.*A`).
+            2.  Use **Ripgrep (`rg`)** to scan the workspace for files containing matching lines.
             3.  For each matching file, invoke `vscode.executeDocumentSymbolProvider` to parse symbols.
             4.  Filter symbols in memory to ensure they match **ALL** keywords.
             5.  **If Forced:** Return these results directly.
@@ -385,7 +386,7 @@ The `SymbolController` maintains a state machine to handle the availability of t
 
 ### 6.1 UI/UX Design
 - **Location:**
-    - Same View Container as Symbol Window (`symbol-window-container`).
+    - Same View Container as Symbol Window (`symbol-relation-window-container`).
     - Appears **below** the Symbol Window by default.
     - **Resizable:** Users can drag the split line between Symbol and Relation windows.
 - **View ID:** `relation-window-view`.
@@ -401,18 +402,18 @@ The `SymbolController` maintains a state machine to handle the availability of t
     - **History Navigation:** `<` (Back) and `>` (Forward) buttons to navigate through previously viewed root symbols.
     - **Toggle Direction:** Switch between "Calls" (Outgoing) and "Called By" (Incoming).
         -   **Session Persistence:** The selected direction persists for the duration of the session. If the user switches to "Outgoing", subsequent Auto-Sync updates will continue to use "Outgoing" until changed again. The configuration setting `relationWindow.defaultDirection` is only used for the initial state on startup.
-    - **Deep Search:** Always visible. Triggers text-based search for the current root symbol name.
-        -   **Behavior:**
-            -   Executes `ripgrep` search for the root symbol name.
-            -   **Deduplication:** Filters out results that are already present in the semantic hierarchy/reference list (based on file path and line number).
-            -   **Display:** Appends unique text-search results to the end of the list.
-            -   **Visuals:** Displayed with a distinct color or icon to differentiate them from semantic results (similar to Symbol Window's Deep Search results).
+    - **Filter:** Toggle button to show/hide the Filter View. Allows filtering results by Symbol Kind (e.g., Function, Method, Constructor).
+    - **Settings:** Gear icon to open the Settings View.
+        -   **Remove Duplicates:** Option to merge multiple calls from the same function into a single node.
+        -   **Show Definition Path:** Option to show the definition path instead of the call site path in the details.
 
 ### 6.2 Functional Requirements
 
 #### 6.2.1 Auto-Sync Logic
 - **Trigger:** `vscode.window.onDidChangeTextEditorSelection`.
-- **Debounce:** 500ms.
+- **Debounce:** **1000ms**.
+    - If the user moves the cursor or types within 1000ms, the timer resets.
+    - Only triggers after the cursor has been stationary for 1000ms.
 - **Lock Check:** If "Lock View" is enabled, ignore the event immediately.
 - **Jump Suppression (Context Preservation):**
     - **Problem:** When the user double-clicks a node in the Relation Window to jump to its definition, the cursor moves, which would normally trigger Auto-Sync and reset the view to the *target* symbol, causing the user to lose their current browsing context (the *caller*).
@@ -440,36 +441,47 @@ The `SymbolController` maintains a state machine to handle the availability of t
         -   **Step 4 (Failure/No Symbol):** If `undefined` or empty is returned, **abort the update** (maintain the last valid state).
             -   **Exception (Manual Refresh):** If the update was triggered manually (Refresh button), proceed to **Data Fetching Strategy** (Section 6.2.2) to attempt a Reference lookup using the word under the cursor.
 
-#### 6.2.2 Data Fetching Strategy (Fallback Chain)
-1.  **Primary (Call Hierarchy):**
-    -   Use `vscode.prepareCallHierarchy` -> `vscode.provideIncomingCalls` / `vscode.provideOutgoingCalls`.
-2.  **Secondary (References - "Called By" only):**
-    -   **Trigger:**
-        1.  Call Hierarchy returns `undefined` (not supported) OR an empty array (no results).
-        2.  **AND** Direction is **"Incoming Calls"**.
-    -   **Action:** Try `vscode.executeReferenceProvider` using the word under the cursor as the root name.
-    -   **Structure:** **Flat List** (1 Level Deep). Reference items are leaf nodes and cannot be expanded further.
-    -   *Display:* **Grouped by File**.
-        -   Root (Word) -> File Path -> Line Number/Preview.
-    -   **Pagination:** To prevent UI freezing with large result sets (e.g., common variable names), limit the initial display to **100 items**. Provide a "Load More" mechanism (similar to Symbol Window) to fetch subsequent batches on demand.
+#### 6.2.2 Data Fetching Strategy (Parallel & Hybrid)
+The Relation Window employs a **Parallel Execution Strategy** to combine the precision of LSP with the breadth of Deep Search.
 
-#### 6.2.3 Deep Search (Manual)
--   **Trigger:** Dedicated "Deep Search" button in the Relation Window Toolbar (Always Visible).
--   **Usage:** User manually clicks this to find additional text-based occurrences (e.g., in comments or strings) that semantic analysis might miss.
--   **Action:** Uses `ripgrep` to search for the **Root Symbol Name** in the workspace.
--   **Deduplication & Merge:**
-    -   Compare `ripgrep` results with the existing semantic results (Call Hierarchy or References).
-    -   **Filter:** Remove any text result that overlaps with an existing semantic result (same file, same line range).
-    -   **Append:** Add the remaining unique text results to the view.
--   **Display:**
-    -   **Grouped by File**.
-    -   **Visual Distinction:** Use a different icon (e.g., `$(search)`) or a subtle color for the node text to indicate it is a "Text Match" rather than a semantic call.
-    -   Structure: `File Path` -> `Line Number/Preview (Text Match)`.
--   **Persistence:**
-    -   Deep Search results **remain visible** until the next **successful** Auto-Sync updates the view.
-    -   Moving the cursor to a location that triggers a failed Auto-Sync (e.g., whitespace) will **NOT** clear the manual search results.
+1.  **Parallel Execution:**
+    -   Upon triggering a search, the extension launches two asynchronous tasks simultaneously:
+        -   **Task A: LSP Hierarchy** (`vscode.provideIncomingCalls` / `vscode.provideOutgoingCalls`).
+        -   **Task B: Deep Search** (Database + Ripgrep).
+    -   **UI Feedback:**
+        -   **Window Progress:** Show an indeterminate blue progress bar (`vscode.window.withProgress` with `location: Window`) immediately.
+        -   **Webview:** Show a "Loading..." state or skeleton loader.
 
-#### 6.2.4 View Content & Data Protocol
+2.  **Result Merging (First-Paint & Append):**
+    -   **First Response (Usually LSP):**
+        -   As soon as the first task (usually LSP) completes, **immediately** render its results in the Webview.
+        -   Do **not** wait for the second task.
+    -   **Second Response (Usually Deep Search):**
+        -   When the second task completes, perform **Deduplication**:
+            -   Compare new items against the already displayed items.
+            -   **Criteria:** If `File Path` AND `Range` overlap, consider it a duplicate and discard the Deep Search result (preferring the LSP result).
+        -   **Append:** Add the non-duplicate items to the list.
+        -   **Visual Distinction:** Optionally mark Deep Search results (e.g., different icon color) to indicate they are text-based matches.
+    -   **Completion:** Once both tasks are done (or failed), hide the progress bar.
+
+3.  **Deep Search Logic:**
+    -   **Pre-check:**
+        -   Check if the **Symbol Database** is available. If not, skip Deep Search.
+        -   Check if the **Symbol Name** exists in the database. If not, skip Deep Search (avoid useless global text search).
+    -   **Incoming Calls (Callers):**
+        1.  **Ripgrep:** Search workspace for `Symbol Name`.
+        2.  **Map:** For each match `(File, Line)`, query DB to find the "Enclosing Symbol" (the function containing that line).
+    -   **Outgoing Calls (Callees):**
+        1.  **Read Body:** Read source code of the current function.
+        2.  **Tokenize:** Extract words/tokens.
+        3.  **DB Query:** Find symbols in the DB that match these tokens.
+
+4.  **Error Handling & Cancellation:**
+    -   **Cancellation:** If the user moves the cursor again (triggering a new Debounce) or manually cancels, **abort** both running tasks immediately.
+    -   **Database Error:** If the DB is busy or corrupt, catch the error silently and return empty results for Deep Search. Do **not** block LSP results.
+    -   **Timeout:** Set a reasonable timeout (e.g., 5s) for Deep Search. If it takes too long, abort it to save resources.
+
+#### 6.2.3 View Content & Data Protocol
 - **Tree Structure:**
     -   **Lazy Loading:** Initial fetch retrieves only the first level of children. Subsequent levels are fetched dynamically when the user expands a node.
     -   **Root:** The symbol under cursor.
@@ -515,25 +527,63 @@ The `SymbolController` maintains a state machine to handle the availability of t
         2.  Send a message to the frontend to show a toast/notification: "Data is stale. Please refresh."
         3.  Optionally, attempt to re-resolve the symbol at the current cursor position if the editor is active.
 
-#### 6.2.5 Concurrency & Lifecycle
+#### 6.2.4 Concurrency & Lifecycle
 -   **Race Condition Handling:**
     -   Assign a unique `requestId` (incrementing integer or timestamp) to each hierarchy fetch request.
     -   The Frontend stores the latest `requestId`.
     -   When the Backend responds, it includes the `requestId`.
     -   The Frontend discards any response where `response.requestId != current.requestId`. This prevents "stale" results from overwriting newer ones (e.g., fast cursor movement).
 
-## 7. Configuration Settings
+## 7. Part III: Reference Window (Lookup References)
+
+### 7.1 UI/UX Design
+- **Location:**
+    -   **Panel Area (Bottom)**: The view is hosted in the bottom panel (alongside Terminal, Output, Debug Console).
+    -   **Goal:** Provide a persistent, non-intrusive view for reference results that doesn't clutter the editor area.
+- **Trigger:**
+    -   **Method 1:** Click "Lookup References" button in the Relation Window toolbar.
+    -   **Method 2:** Right-click in the editor and select "Lookup References".
+    -   **Method 3:** Click the "Search" button in the Reference Window (uses input box content).
+    -   **Note:** The Reference Window does **NOT** update automatically on cursor movement. It only updates when explicitly triggered via one of the above methods.
+    -   **Behavior:** When triggered, the Reference Window automatically opens (if hidden) and gains focus.
+- **Interaction:**
+    -   **Click:** Selects the reference item and shows a **Code Preview** in the panel (if supported) or jumps to the location in the editor.
+    -   **Close/Hide:** The view provides a "Close" or "Hide" button (or standard VS Code UI controls) to dismiss the panel when not needed.
+
+### 7.2 Functional Requirements
+
+#### 7.2.1 Data Fetching Strategy
+1.  **Parallel Execution:**
+    -   The extension executes **LSP Reference Provider** and **Deep Search (Ripgrep)** simultaneously.
+    -   Results are displayed incrementally as they arrive to ensure responsiveness.
+
+2.  **Deduplication & Merging:**
+    -   **LSP Results:** Displayed with standard styling.
+    -   **Deep Search Results:** Displayed with a distinct background color (e.g., light yellow/blue) to indicate they are text matches.
+    -   **Intersection:** If a result appears in *both* LSP and Deep Search:
+        -   It is treated as a confirmed reference.
+        -   The "Deep Search" background color is **removed**.
+        -   Duplicates are merged into a single entry.
+
+
+#### 7.2.2 Code Preview
+-   **Mechanism:**
+    -   When a reference is found, the extension reads the file content (using `vscode.workspace.openTextDocument` or `fs.readFile`).
+    -   Extracts the line of code containing the reference.
+    -   Displays this line in the Reference Window list item, allowing the user to see context without opening the file.
+
+## 8. Configuration Settings
 - `symbolWindow.enable`: (Default: true)
 - `relationWindow.enable`: (Default: true)
 - `relationWindow.autoSync`: (Default: true) - If false, only updates on manual refresh command.
 - `relationWindow.defaultDirection`: "incoming" | "outgoing" (Default: "incoming" - "Called By").
 
-## 8. Testing Strategy (TEST.md)
+## 9. Testing Strategy (TEST.md)
 
-### 8.1 Symbol Window Tests
+### 9.1 Symbol Window Tests
 *(Refer to TEST.md for full test cases)*
 
-### 8.2 Relation Window Tests
+### 9.2 Relation Window Tests
 - [ ] **Activation & Layout**
     - Enable `relationWindow.enable`.
     - Verify "Relation Window" appears in the Side Bar below Symbol Window.

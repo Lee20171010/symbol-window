@@ -1,17 +1,20 @@
 import * as vscode from 'vscode';
-import { SymbolModel, parseCStyleType, parseSignature } from './SymbolModel';
+import * as path from 'path';
+import { SymbolModel } from './SymbolModel';
+import { parserRegistry } from './parsing/ParserRegistry';
 import { SymbolWebviewProvider } from './SymbolWebviewProvider';
-import { SymbolMode, SymbolItem } from '../../shared/types';
-import { SymbolDatabase } from '../../shared/db/database';
+import { SymbolMode, SymbolItem } from '../../shared/common/types';
+import { SymbolDatabase, SymbolRecord } from '../../shared/db/database';
 import { SymbolIndexer } from './indexer/indexer';
-import { LspClient, LspStatus } from '../../shared/core/LspClient';
-import { DatabaseManager } from '../../shared/core/DatabaseManager';
+import { LspClient, LspStatus } from '../../shared/services/LspClient';
+import { DatabaseManager } from '../../shared/services/DatabaseManager';
+import { symbolKindNames } from '../../shared/common/symbolKinds';
 
 export class SymbolController {
     private model: SymbolModel;
     private provider?: SymbolWebviewProvider;
     private context: vscode.ExtensionContext;
-    private currentMode: SymbolMode = 'current';
+    public currentMode: SymbolMode = 'current';
     private debounceTimer: NodeJS.Timeout | undefined;
     private currentSearchId: number = 0;
     private searchCts: vscode.CancellationTokenSource | undefined;
@@ -19,6 +22,10 @@ export class SymbolController {
     private currentQuery: string = '';
     private currentScopePath: string | undefined;
     private currentIncludePattern: string | undefined;
+    private currentExcludePattern: string | undefined;
+    private currentDocumentSymbols: SymbolItem[] = [];
+    private currentFilter: number[] = [];
+    private projectFilter: number[] = [];
 
     // Caching
     private searchCache: Map<string, SymbolItem[]> = new Map();
@@ -37,22 +44,35 @@ export class SymbolController {
     private readonly PROBE_CHARS = ['', 'e', 'a', 'i', 'o', 'u', 's', 't', 'r', 'n']; // Common letters
     private isDatabaseReady = false;
     private lastProgress: number | null = null;
+    private disposables: vscode.Disposable[] = [];
 
     constructor(
         context: vscode.ExtensionContext,
         private lspClient: LspClient,
-        private dbManager: DatabaseManager
+        private dbManager: DatabaseManager,
+        private lockedMode?: SymbolMode
     ) {
         this.context = context;
         this.model = new SymbolModel();
         
         // Restore state
-        this.currentMode = this.context.workspaceState.get<SymbolMode>('symbolWindow.mode', 'current');
+        if (this.lockedMode) {
+            this.currentMode = this.lockedMode;
+        } else {
+            this.currentMode = this.context.workspaceState.get<SymbolMode>('symbolWindow.mode', 'current');
+        }
         this.currentScopePath = this.context.workspaceState.get<string>('symbolWindow.scopePath');
-        vscode.commands.executeCommand('setContext', 'symbolWindow.mode', this.currentMode);
+        
+        const allKinds = Object.keys(symbolKindNames).map(Number);
+        this.currentFilter = this.context.workspaceState.get<number[]>('symbolWindow.currentFilter', allKinds);
+        this.projectFilter = this.context.workspaceState.get<number[]>('symbolWindow.projectFilter', allKinds);
+        
+        if (!this.lockedMode) {
+            vscode.commands.executeCommand('setContext', 'symbolWindow.mode', this.currentMode);
+        }
 
         // Listen to LSP status
-        this.lspClient.onStatusChange(status => {
+        this.disposables.push(this.lspClient.onStatusChange(status => {
             this.provider?.postMessage({ command: 'status', status: status });
             if (status === 'ready') {
                 this.dbManager.resumeIndexing();
@@ -61,30 +81,30 @@ export class SymbolController {
             } else if (status === 'loading') {
                 this.dbManager.pauseIndexing();
             }
-        });
+        }));
 
         // Listen to DB status
-        this.dbManager.onReadyChange(ready => {
+        this.disposables.push(this.dbManager.onReadyChange(ready => {
             this.setDatabaseReady(ready);
-        });
+        }));
         
-        this.dbManager.onProgress(percent => {
+        this.disposables.push(this.dbManager.onProgress(percent => {
             this.updateProgress(percent);
-        });
+        }));
 
         // Listen to active editor changes
-        vscode.window.onDidChangeActiveTextEditor(editor => {
+        this.disposables.push(vscode.window.onDidChangeActiveTextEditor(editor => {
             // Current Mode: Always try to update immediately
             if (this.currentMode === 'current') {
                 if (editor) {
                     this.updateCurrentSymbols(editor.document.uri).catch(e => {
-                        console.error('[SymbolWindow] updateCurrentSymbols failed', e);
+                        console.error('[Source Window] updateCurrentSymbols failed', e);
                     });
                 } else {
                     this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
                 }
             }
-        }, null, context.subscriptions);
+        }));
 
         // Listen to document changes (re-parse symbols)
         vscode.workspace.onDidSaveTextDocument(async (doc) => {
@@ -99,14 +119,45 @@ export class SymbolController {
         
         // Listen to selection changes for sync
         vscode.window.onDidChangeTextEditorSelection(e => {
-            if (this.currentMode === 'current' && this.provider) {
-                // Sync logic to be implemented
+            if (this.currentMode === 'current' && this.provider && this.provider.isVisible) {
+                const cursor = e.selections[0].active;
+                const symbol = this.findSymbolAtPosition(this.currentDocumentSymbols, cursor);
+                if (symbol) {
+                    this.provider.postMessage({ command: 'selectSymbol', range: symbol.range });
+                }
             }
         }, null, context.subscriptions);
+
+        // Listen to configuration changes
+        this.disposables.push(vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('symbolWindow.enableHighlighting') || 
+                e.affectsConfiguration('shared.enableDatabaseMode')) {
+                this.refresh();
+            }
+        }));
+    }
+
+    private findSymbolAtPosition(symbols: SymbolItem[], position: vscode.Position): SymbolItem | undefined {
+        for (const symbol of symbols) {
+            if (symbol.range.contains(position)) {
+                // Check children first for more specific match
+                if (symbol.children && symbol.children.length > 0) {
+                    const child = this.findSymbolAtPosition(symbol.children, position);
+                    if (child) {
+                        return child;
+                    }
+                }
+                return symbol;
+            }
+        }
+        return undefined;
     }
 
     public setProvider(provider: SymbolWebviewProvider) {
         this.provider = provider;
+        // When provider is set (webview becomes visible or reloaded), refresh immediately
+        // This is crucial when controller is recreated but webview was already there
+        this.refresh();
     }
 
     public setDatabaseReady(ready: boolean) {
@@ -115,12 +166,16 @@ export class SymbolController {
         if (ready) {
             this.lastProgress = null; // Clear progress when ready
         }
-        vscode.commands.executeCommand('setContext', 'symbolWindow.databaseReady', ready);
+        
+        const dbEnabled = vscode.workspace.getConfiguration('shared').get<boolean>('enableDatabaseMode', true);
+        const effectiveReady = ready && dbEnabled;
+
+        vscode.commands.executeCommand('setContext', 'symbolWindow.databaseReady', effectiveReady);
         // Notify webview to update UI (hide deep search, show rebuild)
-        this.provider?.postMessage({ command: 'setDatabaseMode', enabled: ready });
+        this.provider?.postMessage({ command: 'setDatabaseMode', enabled: effectiveReady });
         
         if (ready) {
-            console.log('[SymbolWindow] Indexing complete. Switching to Database Mode.');
+            console.log('[Source Window] Indexing complete. Switching to Database Mode.');
         }
     }
 
@@ -129,10 +184,15 @@ export class SymbolController {
         this.searchCache.clear();
 
         // Sync mode to webview to ensure consistency
-        this.provider?.postMessage({ command: 'setMode', mode: this.currentMode });
+        this.provider?.postMessage({ command: 'setMode', mode: this.currentMode, lockedMode: this.lockedMode });
         
         // Sync database mode state
-        this.provider?.postMessage({ command: 'setDatabaseMode', enabled: this.isDatabaseReady });
+        // We need to check both the config AND the readiness
+        const dbEnabled = vscode.workspace.getConfiguration('shared').get<boolean>('enableDatabaseMode', true);
+        const effectiveReady = dbEnabled && this.isDatabaseReady;
+        
+        vscode.commands.executeCommand('setContext', 'symbolWindow.databaseReady', effectiveReady);
+        this.provider?.postMessage({ command: 'setDatabaseMode', enabled: effectiveReady });
 
         // Sync progress if active
         if (this.lastProgress !== null) {
@@ -144,12 +204,22 @@ export class SymbolController {
         this.provider?.postMessage({ 
             command: 'setSettings', 
             settings: {
-                enableDeepSearch: config.get<boolean>('enableDeepSearch', false)
+                enableHighlighting: config.get<boolean>('enableHighlighting', true)
             }
         });
         
+        // Sync mode
+        this.provider?.postMessage({ command: 'setMode', mode: this.currentMode });
+
         // Sync scope
         this.provider?.postMessage({ command: 'setScope', scopePath: this.currentScopePath });
+
+        // Sync filters
+        this.provider?.postMessage({ 
+            command: 'setFilters', 
+            currentFilter: this.currentFilter, 
+            projectFilter: this.projectFilter 
+        });
 
         // If standby, try polling again (Manual Retry)
         if (this.lspClient.status === 'standby') {
@@ -180,10 +250,19 @@ export class SymbolController {
     }
 
     public toggleMode() {
-        this.currentMode = this.currentMode === 'current' ? 'project' : 'current';
+        if (this.lockedMode) { return; }
+        this.setMode(this.currentMode === 'current' ? 'project' : 'current');
+    }
+
+    public setMode(mode: SymbolMode) {
+        if (this.lockedMode) { return; }
+        if (this.currentMode === mode) { return; }
+        
+        this.currentMode = mode;
         this.context.workspaceState.update('symbolWindow.mode', this.currentMode);
         vscode.commands.executeCommand('setContext', 'symbolWindow.mode', this.currentMode);
         if (this.provider) {
+            // Force update mode in webview
             this.provider.postMessage({ command: 'setMode', mode: this.currentMode });
             
             // Sync settings on mode toggle too
@@ -191,7 +270,7 @@ export class SymbolController {
             this.provider.postMessage({ 
                 command: 'setSettings', 
                 settings: {
-                    enableDeepSearch: config.get<boolean>('enableDeepSearch', false)
+                    enableHighlighting: config.get<boolean>('enableHighlighting', true)
                 }
             });
         }
@@ -215,13 +294,18 @@ export class SymbolController {
             this.searchCts = undefined;
         }
         this.provider?.postMessage({ command: 'status', status: 'ready' });
+        this.provider?.postMessage({ command: 'updateSymbols', symbols: this.allSearchResults });
     }
 
     // Removed checkReadiness method as it is replaced by startPolling/poll
-    public async handleSearch(query: string, includePattern?: string) {
+    public async handleSearch(query: string, includePattern?: string, excludePattern?: string, kinds?: number[]) {
         if (this.currentMode === 'project') {
-            // Update include pattern
+            // Update patterns
             this.currentIncludePattern = includePattern;
+            this.currentExcludePattern = excludePattern;
+            if (kinds) {
+                this.projectFilter = kinds;
+            }
 
             // If not ready, don't search, just ensure UI is in loading state
             if (this.lspClient.status !== 'ready') {
@@ -244,7 +328,7 @@ export class SymbolController {
             const enableDatabaseMode = config.get<boolean>('enableDatabaseMode', false);
 
             // Hybrid Transition: Use DB only if indexing is complete (isDatabaseReady)
-            if (enableDatabaseMode && this.dbManager.db && this.isDatabaseReady) {
+            if (enableDatabaseMode && this.dbManager.getDb() && this.isDatabaseReady) {
                 this.debounceTimer = setTimeout(async () => {
                     if (searchId !== this.currentSearchId) { return; }
                     
@@ -257,8 +341,23 @@ export class SymbolController {
                     }
 
                     try {
-                        const records = this.dbManager.db!.search(query, this.BATCH_SIZE, 0);
-                        const items = records.map(r => this.mapRecordToItem(r));
+                        // If kinds is empty, it means "select none", so return empty immediately (Scheme B)
+                        if (kinds && kinds.length === 0) {
+                            this.allSearchResults = [];
+                            this.loadedCount = 0;
+                            this.provider?.postMessage({ 
+                                command: 'updateSymbols', 
+                                symbols: []
+                            });
+                            return;
+                        }
+
+                        // Optimization: If kinds contains ALL kinds, pass undefined to DB to skip "IN (...)" check
+                        const totalKinds = Object.keys(symbolKindNames).length;
+                        const effectiveKinds = (kinds && kinds.length >= totalKinds) ? undefined : kinds;
+
+                        const records = this.dbManager.getDb()!.search(query, this.BATCH_SIZE, 0, effectiveKinds);
+                        const items = records.map((r: SymbolRecord) => this.mapRecordToItem(r));
                         
                         this.allSearchResults = items;
                         this.loadedCount = items.length;
@@ -268,13 +367,12 @@ export class SymbolController {
                             symbols: items
                         });
                     } catch (e) {
-                        console.error('DB Search failed:', e);
+                        console.error('[Source Window] DB Search failed:', e);
                     }
                 }, 300);
                 return;
             }
 
-            const enableDeepSearch = config.get<boolean>('enableDeepSearch', false);
             const debounceTime = 300;
 
             this.debounceTimer = setTimeout(async () => {
@@ -369,6 +467,8 @@ export class SymbolController {
                         });
                     }
 
+                    allSymbols = this.sortSymbols(allSymbols, query);
+
                     this.allSearchResults = allSymbols;
                     this.loadedCount = this.BATCH_SIZE;
 
@@ -384,12 +484,15 @@ export class SymbolController {
                     if (error instanceof vscode.CancellationError) {
                         // ignore
                     } else {
-                        console.error(`[SymbolWindow] SearchId ${searchId} failed`, error);
+                        console.error(`[Source Window] SearchId ${searchId} failed`, error);
                         
                         // LSP Crash / Error Recovery
                         // If the search fails (e.g. LSP crash), revert to standby and try to recover
                         this.provider?.postMessage({ command: 'status', status: 'loading' }); // Show loading in UI
                         this.lspClient.startPolling();
+
+                        // Stop the search progress bar
+                        this.provider?.postMessage({ command: 'updateSymbols', symbols: [] });
                     }
                     return;
                 }
@@ -399,6 +502,7 @@ export class SymbolController {
 
     private async updateCurrentSymbols(uri: vscode.Uri) {
         const symbols = await this.model.getDocumentSymbols(uri);
+        this.currentDocumentSymbols = symbols;
         
         // Note: We do NOT force status to 'ready' here anymore.
         // We rely on the global readiness state (determined by workspace polling)
@@ -425,10 +529,10 @@ export class SymbolController {
     public loadMore() {
         if (this.currentMode === 'project') {
             const config = vscode.workspace.getConfiguration('shared');
-            if (config.get('enableDatabaseMode') && this.dbManager.db && this.isDatabaseReady) {
-                const nextBatch = this.dbManager.db.search(this.currentQuery, this.BATCH_SIZE, this.loadedCount);
+            if (config.get('enableDatabaseMode') && this.dbManager.getDb() && this.isDatabaseReady) {
+                const nextBatch = this.dbManager.getDb()!.search(this.currentQuery, this.BATCH_SIZE, this.loadedCount);
                 if (nextBatch.length > 0) {
-                    const items = nextBatch.map(r => this.mapRecordToItem(r));
+                    const items = nextBatch.map((r: SymbolRecord) => this.mapRecordToItem(r));
                     this.allSearchResults.push(...items);
                     this.loadedCount += items.length;
                     this.provider?.postMessage({ 
@@ -453,10 +557,8 @@ export class SymbolController {
     }
 
     public async deepSearch(isAuto: boolean = false) {
-        const config = vscode.workspace.getConfiguration('symbolWindow');
-        const enableDeepSearch = config.get<boolean>('enableDeepSearch', false);
-        
-        if (!enableDeepSearch || this.currentMode !== 'project' || !this.currentQuery) {
+        // Deep Search is only available in Project Mode when Database is NOT ready
+        if (this.currentMode !== 'project' || !this.currentQuery) {
             return;
         }
 
@@ -507,6 +609,8 @@ export class SymbolController {
                 // Prepend new items
                 this.allSearchResults = [...newItems, ...this.allSearchResults];
                 
+                this.allSearchResults = this.sortSymbols(this.allSearchResults, this.currentQuery);
+
                 // Refresh UI
                 this.loadedCount = Math.max(this.loadedCount + newItems.length, this.BATCH_SIZE);
                 const batch = this.allSearchResults.slice(0, this.loadedCount);
@@ -518,7 +622,7 @@ export class SymbolController {
                 });
             }
         } catch (e) {
-            console.error('[SymbolWindow] Deep search failed', e);
+            console.error('[Source Window] Deep search failed', e);
         } finally {
             this.provider?.postMessage({ command: 'status', status: 'ready' });
         }
@@ -537,7 +641,7 @@ export class SymbolController {
         
         // Trigger search if query exists
         if (this.currentQuery) {
-            this.handleSearch(this.currentQuery, this.currentIncludePattern);
+            this.handleSearch(this.currentQuery, this.currentIncludePattern, this.currentExcludePattern, this.projectFilter);
         }
     }
 
@@ -548,7 +652,7 @@ export class SymbolController {
         
         // Trigger search if query exists
         if (this.currentQuery) {
-            this.handleSearch(this.currentQuery, this.currentIncludePattern);
+            this.handleSearch(this.currentQuery, this.currentIncludePattern, this.currentExcludePattern, this.projectFilter);
         }
     }
 
@@ -567,54 +671,43 @@ export class SymbolController {
 
     private mapRecordToItem(record: any): SymbolItem {
         const config = vscode.workspace.getConfiguration('symbolWindow');
-        const cleanCStyle = config.get<boolean>('cleanCStyleTypes', true);
-        const moveSignature = config.get<boolean>('moveSignatureToDetail', true);
+        const mode = config.get<string>('symbolParsing.mode', 'auto');
 
-        let finalName = record.name;
-        let finalDetail = record.detail || '';
-        
-        let typeSuffix = '';
-        let signatureSuffix = '';
-
-        if (cleanCStyle) {
-            const { name, type } = parseCStyleType(finalName);
-            if (type) {
-                finalName = name;
-                typeSuffix = type;
-            }
+        const ext = record.file_path ? record.file_path.split('.').pop()?.toLowerCase() || '' : '';
+        let languageId = '';
+        if (ext === 'c' || ext === 'h') {
+            languageId = 'c';
+        } else if (ext === 'cpp' || ext === 'hpp' || ext === 'cc') {
+            languageId = 'cpp';
+        } else if (ext === 'java') {
+            languageId = 'java';
+        } else if (ext === 'cs') {
+            languageId = 'csharp';
         }
 
-        if (moveSignature) {
-            const { name, signature } = parseSignature(finalName);
-            if (signature) {
-                finalName = name;
-                signatureSuffix = signature;
-            }
-        }
+        const parser = parserRegistry.getParser(languageId, mode);
+        const { name, detail } = parser.parse(record.name, record.detail || '', record.kind);
 
-        const parts: string[] = [];
-        if (signatureSuffix) {
-            parts.push(signatureSuffix);
-        }
-        if (typeSuffix) {
-            if (!finalDetail.toLowerCase().includes(typeSuffix)) {
-                parts.push(typeSuffix);
-            }
-        }
-        if (finalDetail) {
-            parts.push(finalDetail);
-        }
-        
+        let finalDetail = detail;
         // In Project Mode, it's helpful to see the container name (e.g. Class)
         if (record.container_name && record.container_name !== finalDetail) {
-            parts.push(record.container_name);
+            finalDetail = finalDetail ? `${finalDetail}  ${record.container_name}` : record.container_name;
         }
 
-        finalDetail = parts.join('  ');
+        const relativePath = vscode.workspace.asRelativePath(vscode.Uri.file(record.file_path));
+        const filename = path.basename(record.file_path);
+        let location = '';
+        if (relativePath === filename) {
+            location = `${filename}:${record.range_start_line + 1}`;
+        } else {
+            const dir = relativePath.substring(0, relativePath.length - filename.length - 1);
+            location = `${filename} (${dir}):${record.range_start_line + 1}`;
+        }
 
         return {
-            name: finalName,
+            name: name,
             detail: finalDetail,
+            path: location,
             kind: record.kind,
             range: new vscode.Range(
                 record.range_start_line, record.range_start_char,
@@ -630,7 +723,26 @@ export class SymbolController {
         };
     }
 
+    private sortSymbols(symbols: SymbolItem[], query: string): SymbolItem[] {
+        const queryLower = query.toLowerCase();
+        return symbols.sort((a, b) => {
+            const aName = a.name.toLowerCase();
+            const bName = b.name.toLowerCase();
 
+            // 1. Exact Match
+            const aExact = aName === queryLower;
+            const bExact = bName === queryLower;
+            if (aExact && !bExact) { return -1; }
+            if (!aExact && bExact) { return 1; }
+
+            // 2. Length (Shortest First)
+            const lenDiff = aName.length - bName.length;
+            if (lenDiff !== 0) { return lenDiff; }
+
+            // 3. Alphabetical
+            return aName.localeCompare(bName);
+        });
+    }
 
     public updateProgress(percent: number) {
         this.lastProgress = percent;
@@ -639,4 +751,17 @@ export class SymbolController {
         }
         this.provider?.postMessage({ command: 'progress', percent });
     }
+
+    public saveFilters(currentFilter: number[], projectFilter: number[]) {
+        this.currentFilter = currentFilter;
+        this.projectFilter = projectFilter;
+        this.context.workspaceState.update('symbolWindow.currentFilter', currentFilter);
+        this.context.workspaceState.update('symbolWindow.projectFilter', projectFilter);
+    }
+
+    public dispose() {
+        this.disposables.forEach(d => d.dispose());
+        this.disposables = [];
+    }
 }
+

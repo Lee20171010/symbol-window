@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { SymbolItem } from '../../../shared/types';
+import { SymbolItem } from '../../../shared/common/types';
+import { getSymbolIconInfo } from '../../utils';
 
 interface SymbolTreeProps {
     symbols: SymbolItem[];
@@ -7,7 +8,26 @@ interface SymbolTreeProps {
     onSelect: (symbol: SymbolItem) => void;
     selectedSymbol: SymbolItem | null;
     defaultExpanded?: boolean;
+    query?: string;
 }
+
+const highlightMatch = (text: string, query: string) => {
+    if (!query) return text;
+    
+    // Split query into terms and escape them
+    const terms = query.split(/\s+/).filter(t => t.length > 0).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (terms.length === 0) return text;
+
+    // Create regex to match any term
+    const regex = new RegExp(`(${terms.join('|')})`, 'gi');
+    const parts = text.split(regex);
+    
+    return parts.map((part, i) => {
+        // Check if this part matches any of the terms (case-insensitive)
+        const isMatch = terms.some(term => new RegExp(`^${term}$`, 'i').test(part));
+        return isMatch ? <span key={i} className="symbol-highlight">{part}</span> : part;
+    });
+};
 
 const SymbolNode: React.FC<{ 
     symbol: SymbolItem; 
@@ -16,7 +36,8 @@ const SymbolNode: React.FC<{
     onSelect: (s: SymbolItem) => void;
     selectedSymbol: SymbolItem | null;
     defaultExpanded?: boolean;
-}> = ({ symbol, depth, onJump, onSelect, selectedSymbol, defaultExpanded }) => {
+    query?: string;
+}> = ({ symbol, depth, onJump, onSelect, selectedSymbol, defaultExpanded, query }) => {
     const [expanded, setExpanded] = useState(() => {
         if (symbol.autoExpand !== undefined) {
             return symbol.autoExpand;
@@ -47,49 +68,22 @@ const SymbolNode: React.FC<{
         setExpanded(!expanded);
     };
 
-    // Map SymbolKind to Codicon class and color
-    const getIconInfo = (kind: number) => {
-        // See vscode.SymbolKind (0-based)
-        const map: {[key: number]: { icon: string, colorVar: string }} = {
-            0: { icon: 'codicon-symbol-file', colorVar: '--vscode-symbolIcon-fileForeground' },
-            1: { icon: 'codicon-symbol-module', colorVar: '--vscode-symbolIcon-moduleForeground' },
-            2: { icon: 'codicon-symbol-namespace', colorVar: '--vscode-symbolIcon-namespaceForeground' },
-            3: { icon: 'codicon-symbol-package', colorVar: '--vscode-symbolIcon-packageForeground' },
-            4: { icon: 'codicon-symbol-class', colorVar: '--vscode-symbolIcon-classForeground' },
-            5: { icon: 'codicon-symbol-method', colorVar: '--vscode-symbolIcon-methodForeground' },
-            6: { icon: 'codicon-symbol-property', colorVar: '--vscode-symbolIcon-propertyForeground' },
-            7: { icon: 'codicon-symbol-field', colorVar: '--vscode-symbolIcon-fieldForeground' },
-            8: { icon: 'codicon-symbol-constructor', colorVar: '--vscode-symbolIcon-constructorForeground' },
-            9: { icon: 'codicon-symbol-enum', colorVar: '--vscode-symbolIcon-enumForeground' },
-            10: { icon: 'codicon-symbol-interface', colorVar: '--vscode-symbolIcon-interfaceForeground' },
-            11: { icon: 'codicon-symbol-function', colorVar: '--vscode-symbolIcon-functionForeground' },
-            12: { icon: 'codicon-symbol-variable', colorVar: '--vscode-symbolIcon-variableForeground' },
-            13: { icon: 'codicon-symbol-constant', colorVar: '--vscode-symbolIcon-constantForeground' },
-            14: { icon: 'codicon-symbol-string', colorVar: '--vscode-symbolIcon-stringForeground' },
-            15: { icon: 'codicon-symbol-number', colorVar: '--vscode-symbolIcon-numberForeground' },
-            16: { icon: 'codicon-symbol-boolean', colorVar: '--vscode-symbolIcon-booleanForeground' },
-            17: { icon: 'codicon-symbol-array', colorVar: '--vscode-symbolIcon-arrayForeground' },
-            18: { icon: 'codicon-symbol-object', colorVar: '--vscode-symbolIcon-objectForeground' },
-            19: { icon: 'codicon-symbol-key', colorVar: '--vscode-symbolIcon-keyForeground' },
-            20: { icon: 'codicon-symbol-null', colorVar: '--vscode-symbolIcon-nullForeground' },
-            21: { icon: 'codicon-symbol-enum-member', colorVar: '--vscode-symbolIcon-enumMemberForeground' },
-            22: { icon: 'codicon-symbol-struct', colorVar: '--vscode-symbolIcon-structForeground' },
-            23: { icon: 'codicon-symbol-event', colorVar: '--vscode-symbolIcon-eventForeground' },
-            24: { icon: 'codicon-symbol-operator', colorVar: '--vscode-symbolIcon-operatorForeground' },
-            25: { icon: 'codicon-symbol-type-parameter', colorVar: '--vscode-symbolIcon-typeParameterForeground' },
-        };
-        return map[kind] || { icon: 'codicon-symbol-misc', colorVar: '--vscode-symbolIcon-nullForeground' };
-    };
+    const iconInfo = getSymbolIconInfo(symbol.kind);
+    const elementRef = React.useRef<HTMLDivElement>(null);
 
-    const iconInfo = getIconInfo(symbol.kind);
+    React.useEffect(() => {
+        if (selectedSymbol === symbol && elementRef.current) {
+            elementRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }, [selectedSymbol, symbol]);
 
     return (
         <div>
             <div 
-                className={`symbol-item ${selectedSymbol === symbol ? 'selected' : ''}`}
+                ref={elementRef}
+                className={`symbol-item ${selectedSymbol === symbol ? 'selected' : ''} ${symbol.isDeepSearch ? 'deep-search-result' : ''}`}
                 style={{ 
-                    paddingLeft: `${depth * 15 + 5}px`,
-                    backgroundColor: symbol.isDeepSearch ? 'var(--vscode-editor-findMatchHighlightBackground)' : undefined
+                    paddingLeft: `${depth * 15 + 5}px`
                 }}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
@@ -99,12 +93,16 @@ const SymbolNode: React.FC<{
                     className={`codicon symbol-expand-icon ${hasChildren ? (expanded ? 'codicon-chevron-down' : 'codicon-chevron-right') : 'hidden'}`}
                     onClick={toggleExpand}
                 ></span>
+                {symbol.isDeepSearch && (
+                    <span className="codicon codicon-zap deep-search-icon" title="Deep Search Result"></span>
+                )}
                 <span 
                     className={`symbol-icon codicon ${iconInfo.icon}`}
                     style={{ color: `var(${iconInfo.colorVar})` }}
                 ></span>
-                <span className="symbol-name">{symbol.name}</span>
+                <span className="symbol-name">{query ? highlightMatch(symbol.name, query) : symbol.name}</span>
                 <span className="symbol-detail">{symbol.detail}</span>
+                {symbol.path && <span className="path">{symbol.path}</span>}
             </div>
             {hasChildren && expanded && (
                 <div>
@@ -120,6 +118,7 @@ const SymbolNode: React.FC<{
                             // This ensures that if a Struct matches, it expands to show itself, 
                             // but its children (members) remain collapsed by default.
                             defaultExpanded={false} 
+                            query={query}
                         />
                     ))}
                 </div>
@@ -128,7 +127,7 @@ const SymbolNode: React.FC<{
     );
 };
 
-const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, selectedSymbol, defaultExpanded }) => {
+const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, selectedSymbol, defaultExpanded, query }) => {
     return (
         <div className="symbol-tree">
             {symbols.map((symbol, index) => (
@@ -140,6 +139,7 @@ const SymbolTree: React.FC<SymbolTreeProps> = ({ symbols, onJump, onSelect, sele
                     onSelect={onSelect}
                     selectedSymbol={selectedSymbol}
                     defaultExpanded={defaultExpanded}
+                    query={query}
                 />
             ))}
         </div>
