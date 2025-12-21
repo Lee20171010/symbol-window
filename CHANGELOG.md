@@ -4,11 +4,12 @@ All notable changes to the "symbol-relation-window" extension will be documented
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [unrelease]
+## [1.0.0] - 2025-12-21
 
 ### Added
 - **Relation Window**: Fully implemented the Relation Window for exploring Call Hierarchy.
     - **Incoming/Outgoing Calls**: View callers and callees for the selected symbol.
+    - **Both Directions**: Added `relationWindow.showBothDirections` setting to display both incoming and outgoing calls simultaneously.
     - **Deep Search**: Integrated `ripgrep`-based Deep Search for relations to find calls even when LSP is incomplete (e.g., in C/C++ projects).
     - **Filtering**: Filter relation results by symbol kind (e.g., show only Functions or Methods).
     - **Settings**: Added options to "Remove Duplicates" and "Show Definition Path".
@@ -16,18 +17,45 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
     - **Code Preview**: View code context for each reference directly in the list.
     - **Navigation**: Quick jump to reference locations.
 - **Symbol Window**:
+    - **Split View**: Added `symbolWindow.splitView` setting to separate "Current Document" and "Project Workspace" into two distinct views for simultaneous access.
     - **Kind Filtering**: Added a new filter button to the search bar allowing users to filter symbols by type (Class, Method, Variable, etc.).
-    - **C-Style Parsing**: Improved symbol parsing for C/C++ to cleaner display names by stripping type suffixes and signatures (configurable).
-- **Shared**:
-    - **Deep Search Utility**: Centralized `ripgrep` search logic for use by both Symbol and Relation windows.
+    - **Keyword Highlighting**: Search results now highlight the matching query terms for better visibility.
+- **Symbol Parsing**: Implemented an extensible `SymbolParser` interface.
+    - **C/C++ Support**: Added a specialized parser for C/C++ to strip function signatures and type suffixes for cleaner display.
+    - **Auto Detection**: Default `auto` mode selects the appropriate parser based on language ID.
+- **New Commands**:
+    - **Relation**: `Toggle Direction`, `Manual Search` (Shift+Alt+H), `Lookup References` (Shift+Alt+F12), `Jump to Definition`.
+    - **Reference**: `Next Reference` (F2), `Previous Reference` (F1).
+    - **Symbol**: `Toggle Mode`, `Focus Project Search` (Ctrl+T), `Focus Current Search` (Ctrl+Shift+O).
+- **New Configurations**:
+    - `symbolWindow.symbolParsing.mode`: Configure parsing strategy (`auto`, `c-style`, `default`).
+    - `symbolWindow.enableHighlighting`: Toggle search result highlighting.
+    - `relationWindow.autoSearch`: Automatically search relations on cursor move.
+    - `relationWindow.autoExpandBothDirections`: Auto-expand nodes when showing both directions.
+    - `relationWindow.enableDeepSearch`: Enable/disable Deep Search for relations.
+
+### Changed
+- **Configuration Scope**: Moved several settings to the `shared` scope to reflect their usage across multiple windows (Symbol, Relation, Reference).
+    - `symbolWindow.enableDatabaseMode` -> `shared.enableDatabaseMode`
+    - `symbolWindow.indexingBatchSize` -> `shared.indexingBatchSize`
+    - `symbolWindow.includeFiles` -> `shared.includeFiles`
+    - `symbolWindow.excludeFiles` -> `shared.excludeFiles`
+    - `shared.database.cacheSizeMB` (New shared setting)
 
 ### Refactor
-- **Shared Core**: Extracted `LspClient` and `DatabaseManager` to `src/shared/core`. This centralizes the LSP connection and SQLite database management, allowing both the Symbol Window and the upcoming Relation Window to share the same resources efficiently.
-- **Status Bar**: Removed the dedicated status bar logic from `SymbolIndexer`.
+- **Architecture**: Adopted a **Feature-based Architecture**. Source code is now organized into `src/features/{symbol, relation, reference}` for better modularity and maintainability.
+- **Shared Core**: Extracted `LspClient` and `DatabaseManager` to `src/shared/core`. This centralizes the LSP connection and SQLite database management.
+- **Global Status Bar**: Refactored status bar logic into a shared component (`GlobalStatusBar`).
+
+### Fixed
+- **Indexing Stability**: Improved robustness of the background indexer.
+    - **Retry Mechanism**: Added automatic retries for files that fail to index (e.g., due to file locks).
+    - **Error Handling**: Enhanced handling of file system errors (e.g., `ENOENT`) during indexing to prevent crashes.
 
 ### UI/UX
 - **Container**: Renamed the main Activity Bar container from "Symbol Window" to **"Window"**. This provides a neutral parent container for both the Symbol and Relation views.
 - **Foolproof View**: Introduced a "Foolproof" view (`all-disabled-view`) that activates when both `symbolWindow.enable` and `relationWindow.enable` are set to `false`. It displays a clean interface with buttons to easily re-enable either window.
+- **Zap Indicator**: Added `$(zap)` icon to indicate results found via Deep Search (Text Search) vs LSP.
 
 ## [0.1.2] - 2025-11-27
 
