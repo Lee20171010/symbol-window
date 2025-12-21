@@ -46,7 +46,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
     - `symbolWindow.includeFiles`: Added new setting to whitelist specific file patterns for indexing.
 
 ### Removed
-- **Deep Search**: Removed `symbolWindow.forceDeepSearch` configuration and related logic. The new hybrid search flow is now the standard, making the manual force switch redundant.
+- **Deep Search**: Removed `symbolWindow.enableDeepSearch` configuration. Deep Search is now an integrated fallback feature in Project Mode (when Database Mode is not ready) and Relation Window, rather than a globally toggled setting.
 
 ## [0.1.1] - 2025-11-26
 

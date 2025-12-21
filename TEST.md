@@ -258,3 +258,32 @@
     - **Full**:
         - Run `Symbol Window: Rebuild Symbol Index (Full)`.
         - **Verify**: The progress bar starts from 0% and goes to 100%. The database is cleared and repopulated.
+        
+## 11. Relation Window Tests
+- [ ] **Activation & Layout**
+    - Enable `relationWindow.enable`.
+    - Verify "Relation Window" appears in the Side Bar below Symbol Window.
+    - Verify it can be resized.
+- [ ] **Auto-Sync**
+    - Open a file with known functions (e.g., `function A() calls B()`).
+    - Place cursor on `B`.
+    - Verify Relation Window updates to show `A` as a caller (Incoming mode).
+    - Move cursor to whitespace. Verify Window does not clear immediately (or retains last valid state).
+- [ ] **Direction Toggle**
+    - Click "Outgoing Calls".
+    - Verify list shows functions called *by* the current symbol.
+    - Click "Incoming Calls".
+    - Verify list shows functions that *call* the current symbol.
+- [ ] **Navigation**
+    - Double-click a caller in the list.
+    - Verify editor jumps to the location where the call happens.
+- [ ] **Fallback Handling**
+    - Open a file type with no LSP (e.g., Plain Text or a language without extension).
+    - Place cursor on a word.
+    - Verify UI shows "No hierarchy info" or "Deep Search" button.
+    - Click "Deep Search".
+    - Verify it finds text occurrences.
+- [ ] **Resource Release**
+    - Set `relationWindow.enable` to `false`.
+    - Verify the view is hidden or empty.
+    - Verify `onDidChangeTextEditorSelection` listeners are disposed (check logs/performance).

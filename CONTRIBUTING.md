@@ -40,12 +40,23 @@ src/
 │   └── symbol/                        // Symbol Window Specifics
 │       ├── indexer/                   // Background Indexer: Scans workspace files into SQLite.
 │       └── parsing/                   // Parsing Strategies: Cleans symbol names (e.g., removing C++ params).
+│
 ├── shared/                            // Shared Infrastructure
-│   ├── core/                          // Core Services: Singletons like LspClient and DatabaseManager.
+│   ├── common/                        // Shared Types and Constants.
 │   ├── db/                            // Database Layer: SQLite schema and query methods.
-│   └── searchUtils.ts                 // Search Engine: Wrapper around `ripgrep` for Deep Search.
+│   ├── services/                      // Core Services: Singletons like LspClient and DatabaseManager.
+│   ├── ui/                            // Shared UI Logic (e.g. GlobalStatusBar).
+│   └── utils/                         // Utilities: Search Engine (Ripgrep), Navigation, etc.
+│
 └── webview/                           // Frontend Application (React)
-    ├── features/                      // UI Components: React components for each feature.
+    ├── components/                    // Shared React Components (e.g. FilterView).
+    ├── features/                      // Feature-specific UI Modules.
+    │   └── <feature>/                 // e.g. symbol, relation
+    │       ├── index.tsx              // Entry point: Mounts the React app.
+    │       ├── *App.tsx               // Main Component: Handles state and messages.
+    │       └── *Tree.tsx              // Presentation: Renders the tree/list view.
+    ├── global.d.ts                    // TypeScript definitions for Webview context.
+    ├── utils.ts                       // Frontend utilities (e.g. message passing).
     └── vscode-api.ts                  // API Wrapper: Typed wrapper for VS Code Webview API.
 ```
 

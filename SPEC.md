@@ -3,7 +3,7 @@
 ## 1. Overview
 **Name:** `symbol-relation-window`
 **DisplayName:** Symbol & Relation Window
-**Goal:** Provide a comprehensive "Source Insight"-like experience in VS Code, featuring a Symbol List for navigation and a Relation Window for call hierarchy analysis.
+**Goal:** Provide a comprehensive "Source Insight"-like experience in VS Code, featuring a Symbol List for navigation, a Relation Window for call hierarchy analysis, and a Reference Window for global lookup.
 **Core Philosophy:** Fast, native look-and-feel, leveraging VS Code APIs to avoid custom parsing overhead where possible.
 
 ## 2. Marketplace Optimization
@@ -11,10 +11,13 @@
 - `symbol`
 - `outline`
 - `navigation`
-- `source insight`
 - `structure`
+- `workspace`
+- `search`
+- `tree`
 - `call hierarchy`
 - `references`
+- `find references`
 - `caller`
 - `callee`
 - `relation`
@@ -27,63 +30,93 @@ The extension follows a modular architecture, separating business logic (Feature
 
 ```
 src/
-├── extension.ts                       // Entry point
-├── features/                          // Feature Modules (MVC-like structure)
-│   ├── symbol/                        // Symbol Window
-│   │   ├── parsing/                   // Symbol Name Cleaning Strategies
-│   │   └── indexer/                   // Background SQLite Indexer
-│   ├── relation/                      // Relation Window (Call Hierarchy)
-│   └── reference/                     // Reference Window
-├── shared/                            // Infrastructure & Utilities
-│   ├── core/                          // Singleton Services (LSP Client, DB Manager)
-│   ├── db/                            // SQLite Access Layer
-│   └── searchUtils.ts                 // Deep Search Engine (Ripgrep wrapper)
+├── extension.ts                       // Entry point: Activates features, registers commands.
+├── features/                          // Feature Modules
+│   ├── <feature>/                     // Standard Pattern (e.g., relation, reference)
+│   │   ├── *Controller.ts             // Logic: Orchestrates events, updates, and mode switching.
+│   │   ├── *Model.ts                  // Data: Fetches information from LSP, Database, or Search.
+│   │   └── *WebviewProvider.ts        // UI Backend: Manages the Webview panel and IPC messages.
+│   │
+│   └── symbol/                        // Symbol Window Specifics
+│       ├── indexer/                   // Background Indexer: Scans workspace files into SQLite.
+│       └── parsing/                   // Parsing Strategies: Cleans symbol names (e.g., removing C++ params).
+│
+├── shared/                            // Shared Infrastructure
+│   ├── common/                        // Shared Types and Constants.
+│   ├── db/                            // Database Layer: SQLite schema and query methods.
+│   ├── services/                      // Core Services: Singletons like LspClient and DatabaseManager.
+│   ├── ui/                            // Shared UI Logic (e.g. GlobalStatusBar).
+│   └── utils/                         // Utilities: Search Engine (Ripgrep), Navigation, etc.
+│
 └── webview/                           // Frontend Application (React)
-    ├── features/                      // UI Components per feature
-    └── vscode-api.ts                  // VS Code Webview API wrapper
+    ├── components/                    // Shared React Components (e.g. FilterView).
+    ├── features/                      // Feature-specific UI Modules.
+    │   └── <feature>/                 // e.g. symbol, relation
+    │       ├── index.tsx              // Entry point: Mounts the React app.
+    │       ├── *App.tsx               // Main Component: Handles state and messages.
+    │       └── *Tree.tsx              // Presentation: Renders the tree/list view.
+    ├── global.d.ts                    // TypeScript definitions for Webview context.
+    ├── utils.ts                       // Frontend utilities (e.g. message passing).
+    └── vscode-api.ts                  // API Wrapper: Typed wrapper for VS Code Webview API.
 ```
 
 **Key Components:**
-*   **Features (`src/features/*`)**: Each folder (symbol, relation) is self-contained, typically consisting of:
+*   **Features (`src/features/*`)**: Each folder (symbol, relation, reference) is self-contained, typically consisting of:
     *   `Controller`: Orchestrates events and updates.
     *   `Model`: Fetches data from LSP or Database.
     *   `WebviewProvider`: Manages the UI panel and IPC.
-*   **Shared Core (`src/shared/core`)**: Manages expensive resources like the Language Server connection and SQLite database connection, shared across all features to save memory.
-*   **Webview (`src/webview`)**: A single React application that renders different "Apps" (`SymbolApp`, `RelationApp`) based on the view context.
+*   **Shared Infrastructure (`src/shared/*`)**:
+    *   `services`: Manages expensive resources like `LspClient` and `DatabaseManager`.
+    *   `db`: Handles SQLite connection, schema, and queries.
+    *   `utils`: Provides utilities like `ripgrep` search and navigation helpers.
+*   **Webview (`src/webview`)**: A single React application that renders different "Apps" (`SymbolApp`, `RelationApp`, `ReferenceApp`) based on the view context.
 
 ### 3.2 Data Flow
-1.  **Init:** Extension activates -> Reads config -> Instantiates enabled Controllers (`SymbolController`, `RelationController`) -> Registers ViewProviders.
+1.  **Init:** Extension activates -> Reads config -> Instantiates enabled Controllers (`SymbolController`, `RelationController`, `ReferenceController`) -> Registers ViewProviders.
 2.  **Update (Symbol):** User opens file -> `SymbolController` checks readiness -> fetches symbols -> Sends `updateSymbols` message to Webview.
 3.  **Update (Relation):** User moves cursor -> `RelationController` debounces -> checks symbol validity -> fetches hierarchy -> Sends `updateRelation` message to Webview.
-4.  **Search:** User types in SearchBar -> React filters locally (Current Mode) OR sends `search` message to Extension (Project Mode).
-5.  **Navigation:** User double-clicks item -> Sends `jump` message to Extension -> Extension opens file & reveals range.
+4.  **Lookup (Reference):** User triggers "Lookup References" -> `ReferenceController` fetches data (LSP + Deep Search) -> Sends `update` message to Reference Webview.
+5.  **Search:** User types in SearchBar -> React filters locally (Current Mode) OR sends `search` message to Extension (Project Mode).
+6.  **Navigation:** User double-clicks item -> Sends `jump` message to Extension -> Extension opens file & reveals range.
 
 ### 3.3 Resource Management & Layout
-- **Container:** The main Activity Bar container is named **"Window"** to serve as a neutral parent for both views.
+- **Container (Side Bar):** The main Activity Bar container is named **"Window"** to serve as a neutral parent for the Symbol and Relation views.
+- **Container (Editor Area):** The Reference Window opens as a **Webview Panel** in the editor area (like a standard file tab), allowing for a spacious view and side-by-side comparison.
 - **Independent Switches:**
     - `symbolWindow.enable`: Boolean. Controls the Symbol Window.
     - `relationWindow.enable`: Boolean. Controls the Relation Window.
-- **Layout Logic:**
-    - **Both Enabled:** Vertical Split. Symbol Window on Top, Relation Window on Bottom.
-    - **Only Symbol Enabled:** Symbol Window takes full height. Relation Window is hidden.
-    - **Only Relation Enabled:** Relation Window takes full height. Symbol Window is hidden.
+    - `referenceWindow.enable`: Boolean. Controls the Reference Window.
+- **Layout Logic (Side Bar):**
+    - **Standard Layout (Default):**
+        - **Both Enabled:** Vertical Split. Symbol Window (toggles between Current/Project) on Top, Relation Window on Bottom.
+        - **Only Symbol Enabled:** Symbol Window takes full height.
+        - **Only Relation Enabled:** Relation Window takes full height.
+    - **Split View Enabled (`symbolWindow.splitView`):**
+        - The Symbol Window functionality is separated into two distinct views.
+        - **Order:**
+            1. **Symbol Window** (Current Document) - Top
+            2. **Project Symbols** (Workspace Search) - Middle
+            3. **Relation Window** (if enabled) - Bottom
     - **Both Disabled:** A special "Foolproof" view (`all-disabled-view`) is shown. It displays buttons to "Enable Symbol Window" and "Enable Relation Window" to guide the user back to a working state.
 - **Lifecycle:**
-    - When a module is disabled via settings, its ViewProvider must be disposed, and all associated event listeners (e.g., `onDidChangeTextEditorSelection`, `FileSystemWatcher`) must be removed to free up resources.
-    - The UI View Container should remain, but the specific View should be hidden or show a "Disabled" message if possible.
+    - **Side Bar Views:** When a module is disabled via settings, its ViewProvider must be disposed, and all associated event listeners (e.g., `onDidChangeTextEditorSelection`, `FileSystemWatcher`) must be removed to free up resources.
+    - **Reference Window:**
+        - **On Close:** When the user closes the editor tab, the Webview is disposed (`panel.onDidDispose`). The extension clears the `referenceWindow.exists` context key.
+        - **On Disable:** If `referenceWindow.enable` is set to false, the command to open the window is disabled. If the window is currently open, it is not forcibly closed, but subsequent attempts to open it will be blocked.
 
 ### 3.4 Global Status Bar (Shared)
 Since the Database is a shared resource, its status and controls are hosted in the VS Code Status Bar to avoid UI clutter in the side bar.
-- **Location:** VS Code Status Bar (Bottom Right).
+- **Location:** VS Code Status Bar (Bottom Left, Priority 100).
 - **States:**
     -   **Standby/Ready:** `$(database) Symbols: Ready`
-    -   **Indexing:** `$(sync~spin) Symbols: Indexing (45%)...`
-    -   **Error:** `$(error) Symbols: Error`
+    -   **Indexing:** `$(sync~spin) Symbol: Indexing (45%)`
+    -   **LSP Wait:** `$(sync~spin) Symbol: Waiting for LSP...`
+    -   **Error/Timeout:** `$(warning) Symbol: LSP Timeout`
 - **Interaction:**
     -   **Click:** Opens a Quick Pick menu with shared commands:
-        -   `Rebuild Index (Incremental)`: Triggers an incremental update based on file changes.
+        -   `Rebuild Index (Incremental)`: (Default) Triggers an incremental update based on file changes.
+        -   `Rebuild Index (Full)`: Drops and recreates the database from scratch.
     -   **Note:** There is no manual "Switch Mode" in the menu. The extension automatically uses Database Mode if available. Users cannot manually revert to Normal Mode unless they disable `shared.enableDatabaseMode` in settings.
-    -   **Full Rebuild:** To prevent accidental triggers, the "Full Rebuild" (Drop & Recreate DB) command is **only** available via the VS Code Command Palette (`symbol-window.rebuildIndexFull`).
 
 ## 4. Shared Feature: Database Indexing
 
@@ -92,10 +125,10 @@ Since the Database is a shared resource, its status and controls are hosted in t
     -   `shared.enableDatabaseMode`: Master switch (Default: `true`).
     -   **If True:**
         -   Start indexing in the background.
-        -   Use "Hybrid Transition Strategy": Use LSP + Deep Search (if enabled) until indexing is complete, then switch to Database Mode.
+        -   Use "Hybrid Transition Strategy": Use LSP + Manual Deep Search (via button) until indexing is complete, then switch to Database Mode.
     -   **If False:**
         -   Do not start indexing.
-        -   Permanently use LSP + Deep Search (if enabled).
+        -   Permanently use LSP + Manual Deep Search (via button).
     -   **Shared Resource:** This database is used by both the **Symbol Window** (for fast project-wide searching) and the **Relation Window** (for validating symbol existence before hierarchy lookups).
 2.  **Data Source:** `vscode.executeDocumentSymbolProvider` (for every file).
 3.  **Storage:** `node:sqlite` (Built-in Node.js module).
@@ -175,7 +208,7 @@ The database schema is normalized to reduce storage size and improve query perfo
 
 ### 4.3 Benefits
 -   **Precision:** Eliminates fuzzy/regex matching errors.
--   **Completeness:** Bypasses the 100-result limit of standard LSP calls.
+-   **Completeness:** Bypasses the result limit of standard LSP calls.
 -   **Performance:** SQL queries are extremely fast once indexed.
 
 ### 4.4 Challenges & Solutions
@@ -217,14 +250,26 @@ The database schema is normalized to reduce storage size and improve query perfo
 
 #### 5.1.2 Layout
 - **Technology:** **Webview View** (using React). This is necessary to implement the "Always-visible Search Bar" and custom filtering logic that standard VS Code TreeViews cannot support.
+- **Indexing Progress:** A progress bar displayed at the top of the view when background indexing is active (shows percentage).
+- **Status Feedback:** Visual indicators for "Loading" (Spinner) and "Timeout" (Error) states displayed below the mode header.
 - **Search Bar:** Fixed at the top of the view.
+    - **Filter Icon:** A funnel icon on the right side allows filtering symbols by Kind (Class, Method, etc.).
     - **Project Mode:** Includes a "Toggle Search Details" (kebab menu) button when Deep Search is enabled.
 - **Search Details Panel:** (Project Mode and DeepSearch only)
     - **Scope Control:** Display current scope path, button to select folder, button to clear scope.
     - **Files to Include:** Input field for glob patterns.
 - **Symbol Tree:** The main area displaying the list/tree of symbols below the search bar.
+- **Split View Layout:** (When `symbolWindow.splitView` is enabled)
+    - **Current Document View:**
+        -   Dedicated view for the active editor's symbols.
+        -   Always visible at the top.
+        -   Search bar filters the current document tree.
+    -   **Project Symbols View:**
+        -   Dedicated view for workspace-wide search.
+        -   Located below the Current Document View.
+        -   Search bar triggers project-wide search (Database or LSP).
 - **Toolbar Actions (View Title):**
-    - **Mode Switching:** Icons/Buttons in the View Title area (top right of the panel).
+    - **Mode Switching:** (Only in Standard Layout). Icons/Buttons in the View Title area (top right of the panel).
         - **Modes:**
             1.  **Current Editor (Document Symbols)**
             2.  **Project (Workspace Symbols)**
@@ -232,8 +277,11 @@ The database schema is normalized to reduce storage size and improve query perfo
 
 #### 5.1.3 Interaction
 - **Click:**
-    - **Single Click:** Selects the item in the list (visual feedback only).
-    - **Double Click:** Jumps to the symbol location in the editor and reveals it.
+    - **Single Click:**
+        - **Current Mode:** Selects the item and **jumps** to the symbol location (syncs editor).
+        - **Project Mode:** Selects the item and triggers a preview in the **Context Window** (if available), but does **not** change the active editor focus/location.
+    - **Double Click:** Jumps to the symbol location in the editor and reveals it (transfers focus).
+- **Filter:** Clicking the Filter icon in the search bar opens a checklist to toggle visibility of specific symbol kinds.
 - **Cursor Sync (Current Editor Mode):** Moving the cursor in the editor automatically highlights/selects the corresponding symbol in the tree and scrolls it into view.
 - **Keyboard Shortcuts:**
     - The extension provides commands (`symbol-window.refresh`, `symbol-window.toggleMode`, `symbol-window.rebuildIndex`, `symbol-window.rebuildIndexFull`) that users can bind to custom shortcuts.
@@ -242,7 +290,7 @@ The database schema is normalized to reduce storage size and improve query perfo
     - `Arrow Left/Right`: Move cursor within the Search Bar (when focused).
     - `Enter`: Jump to the selected symbol (same as Double Click).
 - **State Persistence:**
-    - The extension remembers the last active mode (Current vs. Project), search query, details panel visibility (`showDetails`), and include pattern (`includePattern`) when the view is hidden or VS Code is restarted using `vscode.Memento`.
+    - The extension remembers the last active mode (Current vs. Project), search query, details panel visibility (`showDetails`), include pattern (`includePattern`), and filters when the view is hidden or VS Code is restarted (using Webview State and Workspace State).
 
 ### 5.2 Functional Requirements
 
@@ -292,15 +340,17 @@ The database schema is normalized to reduce storage size and improve query perfo
         - **Strategy:** "Fetch Missing + Cache + Client Filter".
         - Step 1: Split query into keywords.
         - Step 2: Identify keywords not present in the cache.
-        - Step 3: Fetch results for missing keywords (up to 3 at a time) using `vscode.executeWorkspaceSymbolProvider`.
+        - Step 3: Fetch results for missing keywords using `vscode.executeWorkspaceSymbolProvider`.
         - Step 4: Cache the results for each keyword.
         - Step 5: Collect all cached results for the current keywords.
         - Step 6: Filter the collected results in memory to ensure each symbol matches **ALL** keywords.
+    - **Database Mode (SQLite):**
+        - **Trigger:** Active when `shared.enableDatabaseMode` is true and indexing is complete.
+        - **Strategy:** Direct SQL Query.
+        - **Details:** See [Section 5.4.2](#542-search--pagination) for full SQL logic, ordering rules, and pagination details.
     - **Deep Search (Text Scan Fallback):**
-        - **Configuration:**
-            - `symbolWindow.enableDeepSearch`: Master switch (Default: `true`).
         - **Trigger:**
-            - Manual button click in Project Mode (if `enableDeepSearch` is true).
+            - Manual button click in Project Mode (Vertical Ellipsis menu).
             - Fallback if standard search yields insufficient results (implementation detail).
         - **Optimization:**
             - **Regex Permutations:** Generates regex for all permutations of keywords (up to 5) to allow order-independent matching directly in `ripgrep` (e.g., `A.*B|B.*A`).
@@ -329,25 +379,26 @@ The database schema is normalized to reduce storage size and improve query perfo
     - `SymbolItem`: Renders individual rows (Icon + Name + Detail).
 3.  **SymbolController (Backend):** Handles business logic, message passing, caching, and readiness checks.
 4.  **SymbolModel:** Wraps VS Code APIs (`executeDocumentSymbolProvider`, `executeWorkspaceSymbolProvider`).
-5.  **Database Module (`src/db`):** Manages the SQLite connection and schema.
-6.  **Indexer Module (`src/indexer`):** Handles workspace crawling, symbol extraction, and incremental updates.
+5.  **Database Module (`src/shared/db`):** Manages the SQLite connection and schema.
+6.  **Indexer Module (`src/features/symbol/indexer`):** Handles workspace crawling, symbol extraction, and incremental updates.
 
 #### 5.3.2 Readiness State Machine
-The `SymbolController` maintains a state machine to handle the availability of the Language Server Protocol (LSP).
+The `LspClient` (shared service) maintains a state machine to handle the availability of the Language Server Protocol (LSP). The `SymbolController` consumes this state to update the UI.
 
 - **States:**
-    - `standby`: Initial state, or after a timeout/error. The extension is waiting for a trigger to check availability.
+    - `standby`: Initial state. The extension is waiting for a trigger (e.g., opening a file) to check availability.
     - `loading`: The extension is actively polling `getWorkspaceSymbols` to check if the LSP is ready.
     - `ready`: The LSP has successfully returned symbols.
+    - `timeout`: Polling exceeded the maximum retries (60s) without success.
 - **Transitions:**
-    - `standby` -> `loading`: Triggered by `startPolling()` (e.g., on activation or manual retry).
+    - `standby` -> `loading`: Triggered by `startPolling()` (e.g., on activation, file open, or manual retry).
     - `loading` -> `ready`: Polling succeeds (symbols returned or empty result with no error).
-    - `loading` -> `standby`: Polling times out (MAX_RETRIES exceeded) or fails repeatedly.
-    - `ready` -> `standby`: Triggered by an LSP crash or error during search.
+    - `loading` -> `timeout`: Polling times out (MAX_RETRIES exceeded).
+    - `timeout` -> `loading`: Triggered by manual retry (Refresh button).
 - **Mode-Specific Behavior:**
-    - **Project Mode:** Strictly respects the state. If `standby` (timeout), it shows an error. If `loading`, it shows a spinner.
+    - **Project Mode:** Strictly respects the state. If `timeout`, it shows an error. If `loading`, it shows a spinner.
     - **Current Mode:** Also respects the global readiness state. It will fetch and display symbols if available, but the UI will remain in a "Loading" state until the global polling confirms the LSP is fully ready.
-        - **Exception:** If no editor is active, the UI shows "Ready" (empty state) to avoid a perpetual spinner, but the internal state remains `standby` to trigger polling immediately when an editor is opened.
+        - **Exception:** If no editor is active, the state automatically transitions to `ready` to avoid a perpetual spinner.
 
 ### 5.4 Database Mode Integration
 
@@ -368,12 +419,25 @@ The `SymbolController` maintains a state machine to handle the availability of t
     -   **Sanitization:** Escape SQL wildcards (`%`, `_`) and backslashes in user input to prevent injection or incorrect matching (e.g., searching for "100%" should not match "1000"). Use `ESCAPE '\'` in the SQL query.
     -   **SQL Construction:** Use `AND` operators to ensure the result matches **ALL** tokens.
     -   **Scope:** Search across both `name` and `container_name` columns. This allows finding a method by combining its class name and method name (e.g., "MyClass init").
+    -   **Filtering:** Apply `kind` filter if active (using `kind IN (...)`).
+    -   **Ordering:**
+        1.  **Exact Match:** Symbols whose name exactly matches the query string.
+        2.  **Name Match:** Symbols whose name contains the first keyword (prioritized over matches only in `container_name`).
+        3.  **Length:** Shorter names first.
+        4.  **Alphabetical:** A-Z.
+        5.  **File Path:** Consistent tie-breaker.
     -   **Example SQL:**
         ```sql
         SELECT * FROM symbols 
         WHERE (name LIKE '%User%' OR container_name LIKE '%User%') 
         AND (name LIKE '%Controller%' OR container_name LIKE '%Controller%')
-        ORDER BY name ASC, path ASC
+        AND kind IN (5, 11) -- Optional Filter
+        ORDER BY 
+            CASE WHEN name LIKE 'User Controller' THEN 0 ELSE 1 END, -- Exact Match
+            CASE WHEN name LIKE '%User%' THEN 0 ELSE 1 END,          -- Name Match
+            LENGTH(name) ASC,
+            name ASC, 
+            path ASC
         LIMIT 100 OFFSET ?
         ```
 -   **Precise Matching:** Use SQL `LIKE` with `%` wildcards (e.g., `%keyword%`) for substring matching.
@@ -382,7 +446,7 @@ The `SymbolController` maintains a state machine to handle the availability of t
     -   *Performance:* Since results are paginated (100 items), simple substring highlighting is performant and does not cause rendering lag.
     -   *Consistency:* Frontend highlighting logic must match the backend's `AND` logic (highlight all occurrences of all keywords).
 
-## 6. Part II: Relation Window (New)
+## 6. Part II: Relation Window
 
 ### 6.1 UI/UX Design
 - **Location:**
@@ -391,35 +455,42 @@ The `SymbolController` maintains a state machine to handle the availability of t
     - **Resizable:** Users can drag the split line between Symbol and Relation windows.
 - **View ID:** `relation-window-view`.
 - **Interaction:**
-    -   **Auto-Sync:** As the user moves the cursor in the editor, the Relation Window updates to show the hierarchy of the symbol under the cursor.
-    -   **Click:** Single click selects/highlights the item and previews the location in the editor.
-        -   **Focus Management:** The preview MUST use `{ preserveFocus: true, preview: true }`. This allows the user to navigate the list using keyboard arrows (`↓`/`↑`) while seeing the code update, without losing focus from the Relation Window.
+    -   **Cursor Sync:** As the user moves the cursor in the editor, the Relation Window updates to show the hierarchy of the symbol under the cursor (if `relationWindow.autoSearch` is enabled).
+    -   **Click:** Single click selects the item.
+        -   **Preview:** If the **Context Window** extension is installed, it triggers a preview in that window.(if available).
     -   **Double Click / Enter:** Jumps to the code location and **transfers focus** to the editor.
-    -   **Keyboard:** Arrow keys to navigate, Enter to jump. (Consistent with Symbol Window).
+    -   **Context Menu:**
+        -   **Jump to Definition:** (Right-click) Jumps to the definition of the target symbol (instead of the call site). Only available if the item has a resolved definition target.
+    -   **Keyboard:** Arrow keys to navigate, Enter to jump.
     - **Toolbar Actions (View Title):**
-    - **Refresh:** Force Sync to Current Cursor. Manually triggers the Auto-Sync logic for the current cursor position, even if "Lock View" is enabled.
-    - **Lock View:** Toggle button. When enabled, the view ignores all cursor movements (Auto-Sync disabled). The view only updates via manual "Refresh" or explicit commands.
-    - **History Navigation:** `<` (Back) and `>` (Forward) buttons to navigate through previously viewed root symbols.
-    - **Toggle Direction:** Switch between "Calls" (Outgoing) and "Called By" (Incoming).
-        -   **Session Persistence:** The selected direction persists for the duration of the session. If the user switches to "Outgoing", subsequent Auto-Sync updates will continue to use "Outgoing" until changed again. The configuration setting `relationWindow.defaultDirection` is only used for the initial state on startup.
-    - **Filter:** Toggle button to show/hide the Filter View. Allows filtering results by Symbol Kind (e.g., Function, Method, Constructor).
-    - **Settings:** Gear icon to open the Settings View.
+        - **Toggle Direction:** Switch between "Calls" (Outgoing) and "Called By" (Incoming).
+            -   **Visibility:** Hidden if `relationWindow.showBothDirections` is enabled.
+        - **Refresh / Search:**
+            -   If `autoSearch` is **ON**: Shows a "Refresh" button to force sync to the current cursor.
+            -   If `autoSearch` is **OFF**: Shows a "Search" button to manually trigger a search for the symbol under the cursor.
+        - **Lookup References:** Triggers the Reference Window to search for references of the selected symbol (only visible when Reference Window is active).
+        - **Previous/Next Reference:** Buttons to navigate through the reference list (only visible when Reference Window is active).
+        - **Filter:** Toggle button to show/hide the Filter View.
+            -   **Standard Mode:** Toggles the filter view for the current direction.
+            -   **Both Directions Mode:** Opens a dropdown menu to select "Incoming Filter" or "Outgoing Filter", allowing independent configuration for each direction.
+        - **Settings:** Gear icon to open the Settings View (in the Webview content).
+            -   **Visibility:** Only visible when direction is "Outgoing" or in "Both Directions" mode (since settings like "Remove Duplicates" apply to outgoing calls).
+    - **Settings (Webview):**
         -   **Remove Duplicates:** Option to merge multiple calls from the same function into a single node.
         -   **Show Definition Path:** Option to show the definition path instead of the call site path in the details.
 
 ### 6.2 Functional Requirements
 
-#### 6.2.1 Auto-Sync Logic
+#### 6.2.1 Cursor-Sync Logic
+- **Prerequisite:** `relationWindow.autoSearch` is enabled.
 - **Trigger:** `vscode.window.onDidChangeTextEditorSelection`.
 - **Debounce:** **1000ms**.
     - If the user moves the cursor or types within 1000ms, the timer resets.
     - Only triggers after the cursor has been stationary for 1000ms.
-- **Lock Check:** If "Lock View" is enabled, ignore the event immediately.
 - **Jump Suppression (Context Preservation):**
     - **Problem:** When the user double-clicks a node in the Relation Window to jump to its definition, the cursor moves, which would normally trigger Auto-Sync and reset the view to the *target* symbol, causing the user to lose their current browsing context (the *caller*).
     -   **Solution:** When a jump is initiated by the Relation Window, set a temporary flag `isJumping = true`. The `onDidChangeTextEditorSelection` listener checks this flag; if true, it ignores the event and resets the flag. This keeps the Relation Window focused on the original symbol while the editor shows the target.
     -   **Suppression Window:** Instead of resetting the flag on the *first* event, the flag should remain active for a short duration (e.g., 100ms) after the jump command is issued. This handles cases where VS Code fires multiple selection events (e.g., focus change + cursor move + scroll) in rapid succession during a single jump operation.
-- **Logic:**
     - **Flag Lifecycle:**
         1.  **Set:** `isJumping = true` immediately before executing the jump command (`vscode.window.showTextDocument` / `revealRange`).
         2.  **Safety Timeout:** Set a timeout (e.g., 1000ms) to automatically reset `isJumping = false`. This ensures the flag doesn't get stuck if the editor event fails to fire (e.g., jumping to the exact same location).
@@ -430,18 +501,19 @@ The `SymbolController` maintains a state machine to handle the availability of t
                 return; // Suppress this specific update
             }
             ```
-    -   **Symbol Validation (Retain State & Anti-Flicker):**
-        -   **Goal:** The Relation Window should **only** update when the user clicks on a valid symbol. Clicking on whitespace, comments, or non-symbols should **NOT** clear the view; it should retain the last valid hierarchy.
-        -   **Step 1:** Call `vscode.prepareCallHierarchy` at the new cursor position.
-            -   **Multiple Results:** If the API returns an array of items, use the **first item** as the candidate.
-        -   **Step 2 (Stability Check):** If a valid `CallHierarchyItem` is returned, compare it with the **Current Root Symbol**.
-            -   If `New Root` is identical to `Current Root` (same `uri`, same `name`, and `range` overlaps), **ignore the update**. This prevents the tree from redrawing/collapsing while the user navigates within the same function.
-        -   **Step 3 (Update):** If it is a *new* valid symbol, update the Relation Window.
-            -   **Empty Results:** The view updates even if the symbol has no incoming/outgoing calls (it will display the Root with no children).
-        -   **Step 4 (Failure/No Symbol):** If `undefined` or empty is returned, **abort the update** (maintain the last valid state).
-            -   **Exception (Manual Refresh):** If the update was triggered manually (Refresh button), proceed to **Data Fetching Strategy** (Section 6.2.2) to attempt a Reference lookup using the word under the cursor.
 
-#### 6.2.2 Data Fetching Strategy (Parallel & Hybrid)
+#### 6.2.2 Symbol Resolution & Validation
+-   **Goal:** The Relation Window should **only** update when the user clicks on a valid symbol. Clicking on whitespace, comments, or non-symbols should **NOT** clear the view; it should retain the last valid hierarchy.
+-   **Step 1:** Call `vscode.prepareCallHierarchy` at the new cursor position.
+    -   **Multiple Results:** If the API returns an array of items, use the **first item** as the candidate.
+-   **Step 2 (Stability Check):** If a valid `CallHierarchyItem` is returned, compare it with the **Current Root Symbol**.
+    -   If `New Root` is identical to `Current Root` (same `uri`, same `name`, and `range` overlaps), **ignore the update**. This prevents the tree from redrawing/collapsing while the user navigates within the same function.
+-   **Step 3 (Update):** If it is a *new* valid symbol, update the Relation Window.
+    -   **Empty Results:** The view updates even if the symbol has no incoming/outgoing calls (it will display the Root with no children).
+-   **Step 4 (Failure/No Symbol):** If `undefined` or empty is returned, **abort the update** (maintain the last valid state).
+    -   **Exception (Manual Refresh):** If the update was triggered manually (Refresh button), proceed to **Data Fetching Strategy** (Section 6.2.3) to attempt a Reference lookup using the word under the cursor.
+
+#### 6.2.3 Data Fetching Strategy (Parallel & Hybrid)
 The Relation Window employs a **Parallel Execution Strategy** to combine the precision of LSP with the breadth of Deep Search.
 
 1.  **Parallel Execution:**
@@ -457,17 +529,18 @@ The Relation Window employs a **Parallel Execution Strategy** to combine the pre
         -   As soon as the first task (usually LSP) completes, **immediately** render its results in the Webview.
         -   Do **not** wait for the second task.
     -   **Second Response (Usually Deep Search):**
-        -   When the second task completes, perform **Deduplication**:
-            -   Compare new items against the already displayed items.
-            -   **Criteria:** If `File Path` AND `Range` overlap, consider it a duplicate and discard the Deep Search result (preferring the LSP result).
-        -   **Append:** Add the non-duplicate items to the list.
-        -   **Visual Distinction:** Optionally mark Deep Search results (e.g., different icon color) to indicate they are text-based matches.
+        -   When the second task completes, perform **Hybrid Merge**:
+            -   Compare new items against the already displayed items (matching by File Path and Range).
+            -   **Merge Logic:**
+                -   **LSP + Deep Search:** If an item exists from LSP and a matching Deep Search result arrives, **update the Range** to use the Deep Search's precise location (often more accurate than LSP's block range), but keep the LSP's semantic definition info.
+                -   **Deep Search + LSP:** If an item exists from Deep Search and a matching LSP result arrives, **upgrade the item** with LSP's definition info (`targetUri`, `targetRange`) and remove the "Deep Search" visual marker.
+        -   **Append:** Add any completely new items to the list.
+        -   **Visual Distinction:** Mark pure Deep Search results (e.g., different icon color) to indicate they are text-based matches.
     -   **Completion:** Once both tasks are done (or failed), hide the progress bar.
 
 3.  **Deep Search Logic:**
     -   **Pre-check:**
         -   Check if the **Symbol Database** is available. If not, skip Deep Search.
-        -   Check if the **Symbol Name** exists in the database. If not, skip Deep Search (avoid useless global text search).
     -   **Incoming Calls (Callers):**
         1.  **Ripgrep:** Search workspace for `Symbol Name`.
         2.  **Map:** For each match `(File, Line)`, query DB to find the "Enclosing Symbol" (the function containing that line).
@@ -479,85 +552,136 @@ The Relation Window employs a **Parallel Execution Strategy** to combine the pre
 4.  **Error Handling & Cancellation:**
     -   **Cancellation:** If the user moves the cursor again (triggering a new Debounce) or manually cancels, **abort** both running tasks immediately.
     -   **Database Error:** If the DB is busy or corrupt, catch the error silently and return empty results for Deep Search. Do **not** block LSP results.
-    -   **Timeout:** Set a reasonable timeout (e.g., 5s) for Deep Search. If it takes too long, abort it to save resources.
 
-#### 6.2.3 View Content & Data Protocol
+#### 6.2.4 View Content & Data Protocol
 - **Tree Structure:**
     -   **Lazy Loading:** Initial fetch retrieves only the first level of children. Subsequent levels are fetched dynamically when the user expands a node.
     -   **Root:** The symbol under cursor.
     -   **Children:** The callers (or callees).
-    -   **Aggregation:** If a function calls the target multiple times, VS Code returns one item with multiple ranges. The Relation Window should display **one node per call range**.
-        -   *Example:* If `Function B` calls `Function A` at line 10 and line 20, the tree should show two nodes for `Function B`, one pointing to line 10 and another to line 20. This avoids complex "badge" UI and allows direct navigation to each call site.
+    -   **Aggregation & Display Logic:**
+        -   **Incoming Calls (Callers):**
+            -   **One Node Per Call Site:** Displays every location where the root symbol is called. If `Function B` calls `Function A` twice, `Function B` appears twice (pointing to different lines).
+            -   **Sorting:**
+                -   **Root Name Match First:** Callers whose name matches the Root Symbol's name (e.g., recursive calls or same-named functions) are listed first.
+                -   **Matching Logic:** Uses regex `/[a-zA-Z0-9_]+/` to extract the core name for comparison.
+                -   **Others:** Remaining callers follow.
+            -   **Filtering:**
+                -   **Deduplication:** Identical call sites (same URI + Range) are merged.
+                -   **Self-Reference:** Callers that are identical to the Root Node (same URI + Range) are filtered out (to prevent immediate infinite recursion in the view).
+        -   **Outgoing Calls (Callees):**
+            -   **Display Logic:** Displays symbols called by the root.
+            -   **Ambiguity Handling (Multiple Definitions):**
+                -   **Scenario:** A called symbol (e.g., `func()`) might resolve to multiple definitions (overloads, dynamic dispatch).
+                -   **Display:** The view groups these by definition.
+                -   **Suffix:** Appends `(1/n)`, `(2/n)` to the name to distinguish different definitions of the same symbol.
+            -   **Jump to Definition:**
+                -   Items contain the `targetUri` of the definition.
+                -   Users can right-click and select "Jump to Definition" to navigate to the *callee's definition* instead of the *call site*.
+
+    -   **Configurable Behaviors (Outgoing Only):**
+        -   **Remove Duplicates:**
+            -   **Enabled (Default):** If the root calls the same function multiple times (e.g., `print()` called at line 10 and 20), the view merges them into a **single node** (pointing to the first call site).
+            -   **Disabled:** The view displays **multiple nodes**, one for each call site.
+        -   **Show Definition Path:**
+            -   **Disabled (Default):** The detail text (grayed out) shows the **Call Site** location (file/line where the function is called).
+            -   **Enabled:** The detail text shows the **Definition** location (file/line where the function is defined).
+
 - **Communication Protocol:**
-    -   **Frontend Request:** `{ command: 'resolveHierarchy', itemId: string, direction: 'incoming'|'outgoing' }`
-    -   **Backend Response:** `{ command: 'updateNode', itemId: string, children: RelationItem[] }`
+    -   **Frontend Request (Client -> Extension):**
+        -   `resolveHierarchy`: `{ command: 'resolveHierarchy', itemId: string, direction: 'incoming'|'outgoing' }` - Request children for a node.
+        -   `setDirection`: `{ command: 'setDirection', direction: 'incoming'|'outgoing' }` - Switch view direction.
+        -   `refreshRelation`: `{ command: 'refreshRelation' }` - Trigger manual refresh.
+        -   `navigateHistory`: `{ command: 'navigateHistory', action: 'back'|'forward', index: number }` - History navigation.
+        -   `jump`: `{ command: 'jump', uri: string, range: Range }` - Open file at location.
+        -   `saveSettings`: `{ command: 'saveSettings', settings: RelationSettings }` - Update view settings.
+        -   `toggleLock`: `{ command: 'toggleLock', locked: boolean }` - Toggle auto-sync lock.
+    -   **Backend Response (Extension -> Client):**
+        -   `updateRelation`: `{ command: 'updateRelation', root: RelationItem, children: RelationItem[], ... }` - Full view update (Root change).
+        -   `updateNode`: `{ command: 'updateNode', itemId: string, children: RelationItem[] }` - Partial update (Node expansion).
+        -   `setLoading`: `{ command: 'setLoading', isLoading: boolean }` - Toggle loading spinner.
+        -   `setSettings`: `{ command: 'setSettings', settings: RelationSettings }` - Sync settings state.
     -   **Cache:** The Backend must maintain a `Map<string, CallHierarchyItem>` to map the `itemId` back to the actual VS Code object needed for API calls.
         -   **Cache Clearing:** The cache MUST be cleared whenever the **Root Symbol** changes (i.e., when `updateRelation` is sent). This prevents memory leaks from accumulated items.
         -   **Unique IDs:** `itemId` MUST be a unique identifier (e.g., UUID or incrementing counter) to ensure that even if the same function appears multiple times in the tree (recursion), each node is treated as a distinct entity by the React frontend.
-- **Loading Feedback:**
-    -   **State:** `isLoading` (boolean).
-    -   **UI:** Display a spinner in the View Title or on the expanding node when data is being fetched. This follows the same pattern as the Symbol Window's search loading state.
-- **History Management:**
-    -   **Concept:** The history records the **Root Symbol** (the subject of the view), not the entire tree state. Navigating history simply changes the "Current Subject" and re-fetches the hierarchy for it.
-    -   **Capacity:** Store up to **20** history entries.
-    -   **Entry Data:** `{ rootSymbol: CallHierarchyItem | string, label: string }`.
-        -   `rootSymbol`: The VS Code object (for semantic modes) or the word string (for Fallback mode).
-        -   `label`: The display name for the history entry (e.g., function name or the word).
-    -   **Behavior:**
-        -   **Push:** When the Root Symbol changes (via Auto-Sync or Manual Refresh), push the new state to the history stack.
-        -   **Back/Forward:**
-            1.  Retrieve the target entry from the stack.
-            2.  **Validation:** Attempt to resolve the `rootSymbol`. If the file no longer exists or the symbol is invalid:
-                -   **Abort:** Do not perform the jump.
-                -   **Cleanup:** Remove the invalid entry from the history stack silently (no error toast).
-                -   **Stay:** Remain on the current view.
-            3.  Set the view's Root Symbol to the stored `rootSymbol`.
-            4.  Trigger a hierarchy fetch (resolve children) for this root using the **current** direction.
-            5.  **Note:** This action does **NOT** trigger a new "Push" to history.
-        -   **Duplicate Check:** If the new Root is identical to the current one (same file, same range), do not push to history.
 - **Display Info:**
     -   **Icon:** Symbol Kind icon.
     -   **Name:** Function name.
     -   **Detail:** File path or line number (grayed out).
-    -   **Highlight:** If possible, highlight the specific line of code where the call happens.
+    -   **Deep Search Indicator:** A lightning bolt icon (`$(zap)`) is displayed next to the symbol icon if the result was found via Deep Search (text scanning) rather than LSP.
 -   **Stale Data Handling:**
     -   Since the view persists after file closure, the cached `CallHierarchyItem` (specifically its `Range`) may become outdated if the underlying file is modified.
-    -   **Strategy:** When `resolveHierarchy` is called, wrap the API call in a try-catch block. If VS Code throws an error (e.g., "Invalid Range"), the extension should:
-        1.  Log the error.
-        2.  Send a message to the frontend to show a toast/notification: "Data is stale. Please refresh."
-        3.  Optionally, attempt to re-resolve the symbol at the current cursor position if the editor is active.
+    -   **Strategy:** When `resolveHierarchy` is called, wrap the API call in a try-catch block. If VS Code throws an error (e.g., "Invalid Range"), the extension currently:
+        1.  Logs the error (Warning level).
+        2.  Returns empty results (Silent Failure).
+        3.  The frontend stops the loading spinner but displays no new children.
 
-#### 6.2.4 Concurrency & Lifecycle
+#### 6.2.5 Concurrency & Lifecycle
 -   **Race Condition Handling:**
-    -   Assign a unique `requestId` (incrementing integer or timestamp) to each hierarchy fetch request.
-    -   The Frontend stores the latest `requestId`.
+    -   Assign a unique `requestId` (incrementing integer) to each hierarchy fetch request.
+    -   The Frontend stores the `lastRequestId` of the most recently processed update.
     -   When the Backend responds, it includes the `requestId`.
-    -   The Frontend discards any response where `response.requestId != current.requestId`. This prevents "stale" results from overwriting newer ones (e.g., fast cursor movement).
+    -   The Frontend discards any response where `response.requestId < lastRequestId`. This prevents "stale" results (from older requests that finished late) from overwriting newer ones.
+
+#### 6.2.6 Both Directions Mode
+-   **Trigger:** Enabled via `relationWindow.showBothDirections` setting.
+-   **Structure:**
+    -   The Root Symbol remains the top-level node.
+    -   Immediate children are two **Virtual Category Nodes**:
+        -   `INCOMING CALLS (CALLERS)`
+        -   `OUTGOING CALLS (CALLEES)`
+    -   These nodes are purely organizational (`isCategory: true`) and do not represent actual symbols.
+-   **Data Fetching:**
+    -   Fetches both Incoming and Outgoing hierarchies in parallel (`Promise.all`).
+    -   Populates the respective Category Node with the results.
+-   **Auto-Expansion:**
+    -   If `relationWindow.autoExpandBothDirections` is enabled, the two Category Nodes are automatically expanded to show their children upon loading.
 
 ## 7. Part III: Reference Window (Lookup References)
 
 ### 7.1 UI/UX Design
 - **Location:**
-    -   **Panel Area (Bottom)**: The view is hosted in the bottom panel (alongside Terminal, Output, Debug Console).
-    -   **Goal:** Provide a persistent, non-intrusive view for reference results that doesn't clutter the editor area.
+    -   **Editor Area**: The view opens as a standard editor tab (`vscode.WebviewPanel`).
+    -   **Goal:** Provide a dedicated, spacious workspace for reviewing references without cramping the sidebar or panel.
+- **Layout:**
+    -   **Header:** Collapsible section displaying the Title (e.g., "References: MySymbol") and Total Count. Clicking toggles the visibility of the Toolbar.
+    -   **Toolbar:** Contains three input fields (visible when Header is expanded):
+        1.  **Search References:** Main input for Manual Search text.
+        2.  **Files to Include:** Glob patterns to whitelist files (e.g., `src/**/*.ts`).
+        3.  **Files to Exclude:** Glob patterns to blacklist files (e.g., `**/*.test.ts`).
+    -   **Result List:** Grouped by file path.
 - **Trigger:**
     -   **Method 1:** Click "Lookup References" button in the Relation Window toolbar.
     -   **Method 2:** Right-click in the editor and select "Lookup References".
     -   **Method 3:** Click the "Search" button in the Reference Window (uses input box content).
     -   **Note:** The Reference Window does **NOT** update automatically on cursor movement. It only updates when explicitly triggered via one of the above methods.
-    -   **Behavior:** When triggered, the Reference Window automatically opens (if hidden) and gains focus.
+    -   **Behavior:** When triggered, the Reference Window automatically opens (if not already open) and reveals itself in the active editor group.
 - **Interaction:**
-    -   **Click:** Selects the reference item and shows a **Code Preview** in the panel (if supported) or jumps to the location in the editor.
-    -   **Close/Hide:** The view provides a "Close" or "Hide" button (or standard VS Code UI controls) to dismiss the panel when not needed.
+    -   **Click:** Selects the reference item and shows a **Code Preview** in the list item.
+    -   **Double Click / Enter:** Jumps to the location in the editor.
+    -   **Keyboard Navigation:**
+        -   `Arrow Up/Down`: Navigate through the reference list.
+        -   `Enter`: Open the selected reference in the editor.
+    -   **Close/Hide:** Standard editor tab closing behavior (`Ctrl+W` or click 'x').
 
 ### 7.2 Functional Requirements
 
 #### 7.2.1 Data Fetching Strategy
-1.  **Parallel Execution:**
-    -   The extension executes **LSP Reference Provider** and **Deep Search (Ripgrep)** simultaneously.
-    -   Results are displayed incrementally as they arrive to ensure responsiveness.
+The strategy depends on how the search is triggered, but **both** methods respect the "Files to Include" and "Files to Exclude" filters set in the UI.
 
-2.  **Deduplication & Merging:**
+1.  **Contextual Lookup (Triggered by Cursor/Menu):**
+    -   **Parallel Execution:** Executes **LSP Reference Provider** (using cursor position) and **Deep Search** (using symbol name) simultaneously.
+    -   **Filter Application:** The Deep Search component explicitly applies the current Include/Exclude patterns from the Reference Window's state.
+    -   **Merging:** Results are merged, with LSP taking precedence for definitions.
+
+2.  **Manual Search (Triggered by Input Box):**
+    -   **Deep Search Only:** Since there is no reference cursor position, **only Deep Search** is performed.
+    -   **Scope:** Searches for the text string across the workspace, strictly applying the Include/Exclude patterns.
+    -   **LSP Skipped:** LSP Reference Provider is **NOT** called.
+
+3.  **State Persistence:**
+    -   The Include/Exclude patterns are persisted in `workspaceState`. This means a Contextual Lookup triggered from the editor will use the filters last set by the user in the Reference Window UI.
+
+4.  **Deduplication & Merging:**
     -   **LSP Results:** Displayed with standard styling.
     -   **Deep Search Results:** Displayed with a distinct background color (e.g., light yellow/blue) to indicate they are text matches.
     -   **Intersection:** If a result appears in *both* LSP and Deep Search:
@@ -573,41 +697,93 @@ The Relation Window employs a **Parallel Execution Strategy** to combine the pre
     -   Displays this line in the Reference Window list item, allowing the user to see context without opening the file.
 
 ## 8. Configuration Settings
-- `symbolWindow.enable`: (Default: true)
-- `relationWindow.enable`: (Default: true)
-- `relationWindow.autoSync`: (Default: true) - If false, only updates on manual refresh command.
-- `relationWindow.defaultDirection`: "incoming" | "outgoing" (Default: "incoming" - "Called By").
 
-## 9. Testing Strategy (TEST.md)
+### 8.1 Window Enablement
+- `symbolWindow.enable`: (Default: `true`) Enable the Symbol Window.
+- `relationWindow.enable`: (Default: `true`) Enable the Relation Window.
+- `referenceWindow.enable`: (Default: `true`) Enable the Reference Window.
 
-### 9.1 Symbol Window Tests
-*(Refer to TEST.md for full test cases)*
+### 8.2 Shared Settings
+- `shared.enableDatabaseMode`: (Default: `true`) Enable Database Mode (SQLite) for instant project-wide search.
+- `shared.database.cacheSizeMB`: (Default: `64`) SQLite cache size in MB.
+- `shared.indexingBatchSize`: (Default: `15`) Number of files to process in each indexing batch.
+- `shared.includeFiles`: (Default: `""`) Glob patterns to include in indexing.
+- `shared.excludeFiles`: (Default: `**/*.md, ...`) Glob patterns to exclude from indexing.
 
-### 9.2 Relation Window Tests
-- [ ] **Activation & Layout**
-    - Enable `relationWindow.enable`.
-    - Verify "Relation Window" appears in the Side Bar below Symbol Window.
-    - Verify it can be resized.
-- [ ] **Auto-Sync**
-    - Open a file with known functions (e.g., `function A() calls B()`).
-    - Place cursor on `B`.
-    - Verify Relation Window updates to show `A` as a caller (Incoming mode).
-    - Move cursor to whitespace. Verify Window does not clear immediately (or retains last valid state).
-- [ ] **Direction Toggle**
-    - Click "Outgoing Calls".
-    - Verify list shows functions called *by* the current symbol.
-    - Click "Incoming Calls".
-    - Verify list shows functions that *call* the current symbol.
-- [ ] **Navigation**
-    - Double-click a caller in the list.
-    - Verify editor jumps to the location where the call happens.
-- [ ] **Fallback Handling**
-    - Open a file type with no LSP (e.g., Plain Text or a language without extension).
-    - Place cursor on a word.
-    - Verify UI shows "No hierarchy info" or "Deep Search" button.
-    - Click "Deep Search".
-    - Verify it finds text occurrences.
-- [ ] **Resource Release**
-    - Set `relationWindow.enable` to `false`.
-    - Verify the view is hidden or empty.
-    - Verify `onDidChangeTextEditorSelection` listeners are disposed (check logs/performance).
+### 8.3 Symbol Window
+- `symbolWindow.symbolParsing.mode`: (Default: `auto`) Controls how symbol names are parsed (`auto`, `c-style`, `default`).
+- `symbolWindow.splitView`: (Default: `false`) Split Symbol Window into "Current Document" and "Project Symbols" views.
+- `symbolWindow.enableHighlighting`: (Default: `true`) Enable keyword highlighting in search results.
+
+### 8.4 Relation Window
+- `relationWindow.autoSearch`: (Default: `false`) Automatically search for relations when the cursor moves.
+- `relationWindow.showBothDirections`: (Default: `false`) Show both incoming and outgoing calls.
+- `relationWindow.autoExpandBothDirections`: (Default: `false`) Automatically expand nodes when showing both directions.
+- `relationWindow.enableDeepSearch`: (Default: `true`) Enable Deep Search (text scanning) fallback.
+
+## 9. Commands
+
+### 9.1 Symbol Window
+- `symbol-window.refresh`: Refresh the current view.
+- `symbol-window.toggleMode`: Toggle between Current and Project modes.
+- `symbol-window.focusProjectSearch`: Focus the Project search bar.
+- `symbol-window.focusCurrentSearch`: Focus the Current Document search bar.
+- `symbol-window.deepSearch`: Trigger Deep Search.
+- `symbol-window.rebuildIndex`: Incremental index rebuild.
+- `symbol-window.rebuildIndexFull`: Full index rebuild.
+
+### 9.2 Relation Window
+- `relation-window.refresh`: Refresh the relation tree.
+- `relation-window.manualSearch`: Manually trigger search.
+- `relation-window.toggleDirection`: Toggle between Callers/Callees.
+- `relation-window.lookupReference`: Trigger "Lookup References".
+- `relation-window.jumpToDefinition`: Jump to definition.
+
+### 9.3 Reference Window
+- `reference-window.next`: Go to next reference.
+- `reference-window.prev`: Go to previous reference.
+
+## 10. Default Keyboard Shortcuts
+
+| Command | Keybinding | Condition |
+| :--- | :--- | :--- |
+| **Symbol Window** | | |
+| `symbol-window.focusProjectSearch` | `Ctrl+T` | `config.symbolWindow.enable` |
+| `symbol-window.focusCurrentSearch` | `Ctrl+Shift+O` | `config.symbolWindow.enable` |
+| **Relation Window** | | |
+| `relation-window.manualSearch` | `Shift+Alt+H` | `config.relationWindow.enable` |
+| `relation-window.lookupReference` | `Shift+Alt+F12` | `config.referenceWindow.enable` |
+| **Reference Window** | | |
+| `reference-window.prev` | `F1` | `reference-window.hasResults` |
+| `reference-window.next` | `F2` | `reference-window.hasResults` |
+
+## 11. Future Work & Known Issues
+
+### 11.1 Code Residue (To Be Cleaned)
+-   **Relation Window History:** The internal logic for history navigation (`history`, `navigateHistory`) remains in `RelationController.ts` but the UI buttons have been removed.
+-   **Relation Window Lock:** The `isLocked` state variable remains in `RelationController.ts` but is no longer toggled via UI (replaced by `autoSearch` setting).
+
+### 11.2 Planned Features
+-   **Deep Search Timeout:** Consider adding a timeout (e.g., 5s) for Deep Search tasks. Currently not implemented as it seems unnecessary (users prefer complete results).
+-   **History Navigation UI:** Restore the Back/Forward buttons in the Relation Window toolbar to allow users to navigate through their browsing history (logic already exists in backend).
+-   **Lock View UI:** Restore the "Lock" button to allow users to temporarily freeze the Relation Window on a specific symbol without disabling Auto-Sync globally.
+-   **Stale Data Notification:** Implement a user-friendly notification (Toast) when `resolveHierarchy` fails due to stale data (e.g., "Invalid Range"), instead of failing silently.
+
+### 11.3 History Management
+-   **Concept:** The history records the **Root Symbol** (the subject of the view), not the entire tree state. Navigating history simply changes the "Current Subject" and re-fetches the hierarchy for it.
+-   **Capacity:** Store up to **20** history entries.
+-   **Entry Data:**
+    -   **Internal State:** `{ root: CallHierarchyItem | string, label: string, context?: { uri, range } }`.
+    -   **UI State:** `{ label: string, timestamp: number }`.
+-   **Behavior:**
+    -   **Push:** When the Root Symbol changes (via Auto-Sync or Manual Refresh), push the new state to the history stack.
+    -   **Back/Forward:**
+        1.  Retrieve the target entry from the stack.
+        2.  **Validation:** Attempt to resolve the `rootSymbol`. If the file no longer exists or the symbol is invalid:
+            -   **Abort:** Do not perform the jump.
+            -   **Cleanup:** Remove the invalid entry from the history stack silently (no error toast).
+            -   **Stay:** Remain on the current view.
+        3.  Set the view's Root Symbol to the stored `rootSymbol`.
+        4.  Trigger a hierarchy fetch (resolve children) for this root using the **current** direction.
+        5.  **Note:** This action does **NOT** trigger a new "Push" to history.
+    -   **Duplicate Check:** If the new Root is identical to the current one (same file, same range), do not push to history.
